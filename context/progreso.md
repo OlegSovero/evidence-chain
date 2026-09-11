@@ -4,8 +4,9 @@ Actualizar al terminar cada sesión de trabajo (humano o agente). Formato: `- [x
 
 ## Estado actual
 
-Fase: **planificación terminada, pendiente de scaffolding**.
-Siguiente paso: confirmar el entorno local (SDK de .NET 10, Docker Desktop, Node LTS) y crear el scaffolding.
+Fase: **planificación terminada, entorno confirmado, pendiente de scaffolding**.
+Entorno local verificado (2026-09-11): .NET SDK 10.0.302, Git 2.55, Node v24.21.0, npm 11.19.0, Docker 29.7.2 + Compose v5.5.1 instalados. Docker Desktop pendiente de reinicio de Windows para terminar la instalación (el daemon no corre todavía).
+Siguiente paso: confirmar con Oleg antes de crear el scaffolding de la Fase 1.
 
 ## Fase 0 — Planificación y contexto
 
@@ -14,7 +15,7 @@ Siguiente paso: confirmar el entorno local (SDK de .NET 10, Docker Desktop, Node
 - [x] Contexto para agentes (AGENTS.md, CLAUDE.md, GEMINI.md, skill)
 - [ ] Revisión del plan por Oleg
 - [x] Repositorio GitHub creado: https://github.com/OlegSovero/evidence-chain (privado)
-- [ ] Primer commit con el contexto
+- [x] Primer commit con el contexto (rama `main`, pusheado por Oleg)
 
 ## Fase 1 — Scaffolding (viernes)
 
@@ -65,3 +66,4 @@ Siguiente paso: confirmar el entorno local (SDK de .NET 10, Docker Desktop, Node
 | Fecha | Quién | Qué se hizo |
 |---|---|---|
 | 2026-09-11 | Oleg + Claude | Análisis del enunciado, plan de arquitectura y contexto para agentes |
+| 2026-09-11 | Oleg + Claude | `.gitignore`, `git init`, primer commit y push a `main`; verificado el entorno local (.NET 10, Git, Node LTS, Docker); `.claude/settings.json` sin co-autoría de Claude en commits; convención de workflow (agente commitea, Oleg pushea) documentada en `AGENTS.md` |

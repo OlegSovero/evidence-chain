@@ -1,0 +1,74 @@
+# === Enunciado original (ya copiado en context/enunciado.md) ===
+"01-PRUEBA-CANDIDATO 2.md"
+
+# === .NET ===
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+[Dd]ebug/
+[Rr]elease/
+[Xx]64/
+[Xx]86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+publish/
+*.nupkg
+*.snupkg
+TestResults/
+[Cc]overage/
+*.trx
+
+# === Node / Vite / frontend ===
+node_modules/
+dist/
+dist-ssr/
+.vite/
+.vercel/
+*.local
+coverage/
+.eslintcache
+
+# === Visual Studio ===
+.vs/
+*.vspscc
+*.vssscc
+*.suo
+*.ntvs*
+*.njsproj
+*.sln.iml
+
+# === VS Code ===
+.vscode/*
+!.vscode/extensions.json
+
+# === Rider / JetBrains ===
+.idea/
+
+# === Entorno, secretos y credenciales ===
+.env
+.env.*
+!.env.example
+*.pfx
+*.pem
+*.key
+appsettings.*.local.json
+appsettings.Development.json
+secrets.json
+**/UserSecrets/
+
+# === SQL Server local (Docker) ===
+database/data/
+*.mdf
+*.ldf
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Logs ===
+*.log
+logs/

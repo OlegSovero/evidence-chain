@@ -90,6 +90,7 @@ cd frontend && npm test
 5. Actualiza `context/progreso.md` y, si corresponde, la fila de `docs/code-map.md`.
 6. Si una sugerencia de IA fue aceptada o rechazada de forma relevante, anótala en `context/ai-log.md`.
 7. Pregunta al humano antes de cambiar una decisión del plan, borrar archivos o tocar el enunciado.
+8. Los commits (`git add` + `git commit`) los hace el agente cuando el humano confirma que una tarea está lista; el `git push` lo hace siempre el humano.
 
 ## Prioridades
 

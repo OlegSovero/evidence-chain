@@ -1,0 +1,65 @@
+erDiagram
+    USERS ||--o{ EVIDENCE : "es custodio actual de"
+    USERS ||--o{ CUSTODY_EVENTS : "actúa en"
+    USERS ||--o{ CUSTODY_TRANSFERS : "origen / destino / solicitante"
+    USERS ||--o{ IDEMPOTENCY_RECORDS : "es dueño de la clave"
+    EVIDENCE ||--|{ CUSTODY_EVENTS : "cadena append-only (Sequence 1..n)"
+    EVIDENCE ||--o{ CUSTODY_TRANSFERS : "solo una Pendiente a la vez"
+    CUSTODY_TRANSFERS ||--o{ CUSTODY_EVENTS : "cada transición añade un evento"
+
+    USERS {
+        int Id PK
+        nvarchar UserName UK
+        nvarchar DisplayName
+        nvarchar Role "Investigador | Custodio | Supervisor"
+    }
+
+    EVIDENCE {
+        int Id PK
+        nvarchar Code UK "EV-000001"
+        nvarchar Description
+        int CurrentCustodianId FK
+        datetime2 LastEventAtUtc "keyset + orden de la bandeja"
+        tinyint IntegrityStatus "0 NoVerificada 1 Integra 2 Comprometida"
+        datetime2 IntegrityCheckedAtUtc
+        datetime2 CreatedAtUtc
+    }
+
+    CUSTODY_EVENTS {
+        bigint Id PK
+        int EvidenceId FK
+        int Sequence UK "UNIQUE(EvidenceId, Sequence)"
+        tinyint EventType "Registrada | Solicitada | Aceptada | Rechazada"
+        int ActorUserId FK
+        int FromCustodianId FK "nullable"
+        int ToCustodianId FK "nullable"
+        uniqueidentifier TransferId FK "nullable"
+        nvarchar Notes
+        datetime2 OccurredAtUtc "DATETIME2(3), se firma truncado a ms"
+        binary PreviousHash "BINARY(32), génesis = 32 bytes en cero"
+        binary Hash "BINARY(32) = SHA-256 del JSON canónico"
+    }
+
+    CUSTODY_TRANSFERS {
+        uniqueidentifier Id PK
+        int EvidenceId FK
+        int FromCustodianId FK
+        int ToCustodianId FK
+        int RequestedByUserId FK
+        tinyint Status "0 Pendiente 1 Aceptada 2 Rechazada"
+        nvarchar Reason
+        datetime2 RequestedAtUtc "antigüedad = regla de anomalía"
+        datetime2 RespondedAtUtc "nullable"
+        int RespondedByUserId FK "nullable"
+        nvarchar ResponseNote "nullable"
+        rowversion RowVersion "ETag para If-Match / 409"
+    }
+
+    IDEMPOTENCY_RECORDS {
+        int UserId PK "PK compuesta con IdempotencyKey"
+        nvarchar IdempotencyKey PK
+        binary RequestHash "misma key + otro body = 422"
+        int StatusCode "respuesta guardada para reintentos"
+        nvarchar ResponseBody
+        datetime2 CreatedAtUtc
+    }

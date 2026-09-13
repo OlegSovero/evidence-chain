@@ -1,5 +1,5 @@
 # === Enunciado original (ya copiado en context/enunciado.md) ===
-"01-PRUEBA-CANDIDATO 2.md"
+01-PRUEBA-CANDIDATO 2.md
 
 # === .NET ===
 bin/
@@ -55,7 +55,6 @@ coverage/
 *.pem
 *.key
 appsettings.*.local.json
-appsettings.Development.json
 secrets.json
 **/UserSecrets/
 

@@ -1,13 +1,13 @@
 # Code Map
 
-_Máximo una página._
+_Máximo una página. Rutas relativas a `backend/src/EvidenceChain.Api/` salvo indicación._
 
 | Capacidad | Archivo / módulo | Punto de entrada |
 |---|---|---|
-| Encadenado y verificación de hash | `backend/src/EvidenceChain.Api/Domain/Hashing/`: `CanonicalEventSerializer.cs` (JSON canónico v1), `ChainHasher.cs` (SHA-256, génesis), `ChainVerifier.cs` (recorrido por `Sequence`). Trigger append-only en `Infrastructure/Persistence/Migrations/…_InitialCreate.cs` | `ChainHasher.ComputeHash(evento)` al escribir; `ChainVerifier.Verify(eventos)` al leer, expuesto por `GET /api/v1/evidence/{id}/chain/verify` (`Features/Chain/VerifyChain.cs`, pendiente Fase 3) |
-| Máquina de estados y concurrencia | | |
-| Idempotencia | | |
-| Regla de anomalía | | |
-| Consulta paginada | | |
-| Filtros de URL y cancelación de solicitudes | | |
-| Actualización optimista y manejo de 409 | | |
+| Encadenado y verificación de hash | `Domain/Hashing/CanonicalEventSerializer.cs` (JSON canónico v1), `ChainHasher.cs` (SHA-256, génesis), `ChainVerifier.cs` (recorrido por `Sequence`); `Infrastructure/Persistence/ChainAppender.cs` (único punto que crea eventos: `Sequence`, `PreviousHash`, firma); trigger append-only en `Infrastructure/Persistence/Migrations/…_InitialCreate.cs` | `ChainAppender.AppendAsync` en cada escritura; `GET /api/v1/evidence/{id}/chain/verify` → `Features/Chain/VerifyChain.Handle` (recalcula y cachea `IntegrityStatus`) |
+| Máquina de estados y concurrencia | `Domain/Transfers/TransferStateMachine.cs` (Pendiente → Aceptada \| Rechazada, resultado explícito); `Features/Transfers/TransferResponder.cs` (If-Match → 428, destinatario → 403, `RowVersion` como valor original, `DbUpdateConcurrencyException` → 409 con `currentState`); `Infrastructure/Http/ETag.cs`, `ApiProblems.cs` | `POST /api/v1/custody-transfers/{id}/accept` → `AcceptTransfer.Handle`; `…/reject` → `RejectTransfer.Handle` |
+| Idempotencia | `Infrastructure/Idempotency/IdempotencyEndpointFilter.cs` (clave por usuario, placeholder en la misma transacción, replay con `Idempotent-Replayed`, 422 si cambia el cuerpo); tabla `IdempotencyRecords` | Filtro registrado en `Features/Transfers/TransferEndpoints.cs` sobre `POST /api/v1/custody-transfers` → `RequestTransfer.Handle` |
+| Regla de anomalía | `Domain/Anomalies/PendingTransferRule.cs` (umbral `Anomalies:PendingTransferThresholdHours`, severidad Media/Alta, mensaje en español, `TimeProvider`) | `TransferPresenter.Build` (detalle y bandejas) y `Features/Chain/GetChain.AnomalyFor` (marca en el evento de solicitud): `GET /api/v1/evidence/{id}`, `…/chain`, `GET /api/v1/custody-transfers` |
+| Consulta paginada | `Features/Evidence/ListEvidence.cs` (filtros `q`, `custodianId`, `status`; orden; `pageSize + 1`) y `KeysetCursor.cs` (cursor opaco con dirección); índice `IX_Evidence_Keyset` en la migración inicial | `GET /api/v1/evidence?q&custodianId&status&sort&cursor&pageSize` → `ListEvidence.Handle` |
+| Filtros de URL y cancelación de solicitudes | _pendiente (frontend)_ | |
+| Actualización optimista y manejo de 409 | _pendiente (frontend)_ | |

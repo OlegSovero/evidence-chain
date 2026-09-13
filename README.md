@@ -1,6 +1,6 @@
 # Evidence Chain
 
-Aplicación forense de cadena de custodia de evidencia digital (prueba técnica EY). Contexto completo para agentes y humanos en [`AGENTS.md`](./AGENTS.md); decisiones de arquitectura en [`context/plan-arquitectura.md`](./context/plan-arquitectura.md); estado y próximos pasos en [`context/progreso.md`](./context/progreso.md).
+Aplicación forense de cadena de custodia de evidencia digital (prueba técnica EY). Contexto completo para agentes y humanos en [`AGENTS.md`](./AGENTS.md); decisiones de arquitectura en [`context/plan-arquitectura.md`](./context/plan-arquitectura.md) y [`docs/decisions.md`](./docs/decisions.md); estado y próximos pasos en [`context/progreso.md`](./context/progreso.md).
 
 ## Requisitos
 
@@ -21,19 +21,17 @@ La base corre en `localhost,1433`. El volumen `evidence-chain-sql-data` persiste
 
 ## 2. Configurar secretos locales (`dotnet user-secrets`)
 
-La API nunca lee secretos desde `appsettings*.json`. En Development, ASP.NET Core carga automáticamente los *user secrets* del proyecto.
+La API nunca lee secretos desde `appsettings*.json`. En Development, ASP.NET Core carga automáticamente los *user secrets* del proyecto; en Azure los mismos valores van como configuración de la App Service o referencias a Key Vault.
 
 ```bash
 dotnet user-secrets init --project backend/src/EvidenceChain.Api
 
-# Cadena de conexión a la SQL Server local (usa la misma contraseña que pusiste en .env)
+# Cadena de conexión a la SQL Server local (misma contraseña que en .env)
 dotnet user-secrets set "ConnectionStrings:Sql" "Server=localhost,1433;Database=EvidenceChain;User Id=sa;Password=<tu-password>;TrustServerCertificate=True;Encrypt=True;" --project backend/src/EvidenceChain.Api
 
-# Clave para firmar los JWT locales (pendiente de usar hasta la Fase 3 - Auth)
-dotnet user-secrets set "Jwt:Key" "<una-clave-larga-y-aleatoria>" --project backend/src/EvidenceChain.Api
+# Clave HMAC para firmar los JWT (mínimo 32 caracteres; la API no arranca sin ella)
+dotnet user-secrets set "Jwt:Key" "<una-clave-larga-y-aleatoria-de-al-menos-32-caracteres>" --project backend/src/EvidenceChain.Api
 ```
-
-En Azure, estos mismos valores se configuran como variables de entorno de la App Service (o Key Vault referenciado), nunca en el repo.
 
 ## 3. Crear la base de datos (migraciones EF Core)
 
@@ -42,7 +40,7 @@ dotnet tool restore                                               # instala dotn
 dotnet ef database update --project backend/src/EvidenceChain.Api
 ```
 
-Crea la base `EvidenceChain` y aplica las migraciones: tablas, índices y el trigger append-only de `CustodyEvents`. Alternativa sin EF: ejecutar `database/schema.sql` (script idempotente exportado de las migraciones) con `sqlcmd` o SSMS.
+Crea la base `EvidenceChain` con tablas, índices y el trigger append-only de `CustodyEvents`. Alternativa sin EF: ejecutar `database/schema.sql` (script idempotente exportado de las migraciones).
 
 ## 4. Compilar y probar
 
@@ -51,7 +49,7 @@ dotnet build backend/EvidenceChain.sln
 dotnet test backend/EvidenceChain.sln
 ```
 
-Los tests unitarios (`tests/Unit/`) no necesitan base. Los de integración (`tests/Integration/`) levantan su propio SQL Server efímero con Testcontainers (necesitan Docker corriendo), independiente del contenedor de `docker compose`.
+Los tests unitarios (`tests/Unit/`) no necesitan base. Los de integración (`tests/Integration/`) levantan SQL Server efímeros con Testcontainers (necesitan Docker corriendo), independientes del contenedor de `docker compose`. Cubren, entre otros: cadena alterada detectada por `verify`, idempotencia (misma clave → una sola transferencia y misma respuesta), conflicto de concurrencia (409 con `currentState`), 428 sin `If-Match`, 403 por rol o destinatario equivocado y recorrido keyset completo.
 
 ## 5. Ejecutar la API
 
@@ -59,11 +57,44 @@ Los tests unitarios (`tests/Unit/`) no necesitan base. Los de integración (`tes
 dotnet run --project backend/src/EvidenceChain.Api
 ```
 
-`GET /health` devuelve `200 {"status":"healthy"}` si puede conectarse a la base `EvidenceChain`, o `503` si no. En Development el documento OpenAPI está en `GET /openapi/v1.json`.
+Escucha en `http://localhost:5059`. `GET /health` devuelve `200 {"status":"healthy"}` si conecta con la base, o `503` si no. En Development el contrato OpenAPI está en `/openapi/v1.json` y `/openapi/v1.yaml`.
 
-## Seed de datos (pendiente)
+### Autenticación (simplificada para la demo)
 
-El seeder determinista (1.000 evidencias, 10.000 eventos, con un caso íntegro, uno alterado y una transferencia vencida) se agrega en la Fase 2. Cuando exista:
+No hay contraseñas: `POST /api/v1/auth/token` con `{ "userName": "c.rivas" }` devuelve un JWT firmado con `Jwt:Key` y claims de usuario y rol (`Investigador`, `Custodio`, `Supervisor`). `GET /api/v1/auth/users` lista los usuarios demo. Todos los demás endpoints exigen `Authorization: Bearer <token>`; la autorización por rol y por destinatario se valida en el servidor.
+
+### Endpoints
+
+| Verbo | Ruta | Uso |
+|---|---|---|
+| `GET` | `/api/v1/evidence?q&custodianId&status&sort&cursor&pageSize` | Bandeja con filtros, orden por fecha y paginación keyset (`nextCursor`) |
+| `GET` | `/api/v1/evidence/{id}` | Detalle con transferencia pendiente y anomalía |
+| `GET` | `/api/v1/evidence/{id}/chain` | Línea de tiempo con hashes y marca de anomalía |
+| `GET` | `/api/v1/evidence/{id}/chain/verify` | Recalcula la cadena; primer evento inválido si falla |
+| `POST` | `/api/v1/custody-transfers` | Solicita transferencia (Investigador/Supervisor). Requiere `Idempotency-Key`; devuelve 201 + `ETag` |
+| `POST` | `/api/v1/custody-transfers/{id}/accept` | Acepta (solo el custodio destinatario). Requiere `If-Match`; 428 sin ella, 409 con `currentState` si la versión no coincide |
+| `POST` | `/api/v1/custody-transfers/{id}/reject` | Rechaza. Mismas reglas que `accept`; la custodia no cambia |
+| `GET` | `/api/v1/custody-transfers?status=pending&mine=true` | Bandeja del custodio destinatario |
+| `GET` | `/api/v1/custody-transfers/{id}` | Estado actual de una transferencia (con `ETag`) |
+
+Todos los errores 4xx/5xx responden `application/problem+json`; el 409 incluye `currentState` con `status`, `version`, `respondedBy` y `respondedAtUtc`.
+
+### Probar a mano
+
+- `backend/src/EvidenceChain.Api/EvidenceChain.Api.http`: peticiones listas para la extensión REST Client de VS Code (o Visual Studio/Rider).
+- Postman/Insomnia: importa `openapi.yaml` (o la URL `http://localhost:5059/openapi/v1.json` con la API en marcha).
+
+### Regenerar `openapi.yaml`
+
+Con la API en marcha en Development:
+
+```powershell
+Invoke-WebRequest http://localhost:5059/openapi/v1.yaml -OutFile openapi.yaml
+```
+
+## Seed de datos
+
+El seeder determinista (1.000 evidencias, 10.000 eventos, con un caso íntegro, uno alterado y una transferencia vencida) se integra desde la rama `feat/deterministic-seed`. Cuando esté en `main`:
 
 ```bash
 dotnet run --project backend/src/EvidenceChain.Api -- seed
@@ -80,4 +111,4 @@ cd frontend && npm test
 
 ## Estructura
 
-Ver el mapa completo del repositorio en [`AGENTS.md`](./AGENTS.md#mapa-del-repositorio).
+Ver el mapa completo del repositorio en [`AGENTS.md`](./AGENTS.md#mapa-del-repositorio) y las capacidades en [`docs/code-map.md`](./docs/code-map.md).

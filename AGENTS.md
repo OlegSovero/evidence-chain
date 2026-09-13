@@ -43,11 +43,11 @@ openapi.yaml       contrato generado; debe coincidir con la implementación
 docker-compose.yml SQL Server local
 ```
 
-> Estado actual: backend con dominio, modelo EF, migración inicial y hashing con tests. Faltan seed, endpoints y frontend (ver `context/progreso.md`).
+> Estado actual: backend completo (dominio, EF, migración, hashing, JWT demo, los 7 endpoints del contrato más bandeja de transferencias) con tests unitarios y de integración. El seed vive en la rama `feat/deterministic-seed`; el frontend no existe todavía (ver `context/progreso.md`).
 
 ## Comandos
 
-Verificados en las Fases 1 y 2. No inventes comandos que no estén aquí o en el README.
+Verificados en las Fases 1 a 3. No inventes comandos que no estén aquí o en el README.
 
 ```bash
 docker compose up -d                                   # SQL Server local (espera a que quede "healthy")
@@ -57,8 +57,10 @@ dotnet ef migrations add <Nombre> --project backend/src/EvidenceChain.Api --outp
 dotnet ef migrations script --idempotent --project backend/src/EvidenceChain.Api -o database/schema.sql
 dotnet build backend/EvidenceChain.sln
 dotnet test backend/EvidenceChain.sln                  # el proyecto de tests usa Testcontainers, necesita Docker corriendo
-dotnet run --project backend/src/EvidenceChain.Api      # GET /health en http://localhost:5059/health
+dotnet run --project backend/src/EvidenceChain.Api      # http://localhost:5059 (/health, /openapi/v1.yaml en Development)
 dotnet user-secrets set "ConnectionStrings:Sql" "..." --project backend/src/EvidenceChain.Api
+dotnet user-secrets set "Jwt:Key" "<32+ caracteres>" --project backend/src/EvidenceChain.Api   # obligatoria para arrancar
+Invoke-WebRequest http://localhost:5059/openapi/v1.yaml -OutFile openapi.yaml                   # con la API en marcha
 ```
 
 Pendientes (aún no existen, no ejecutar todavía):

@@ -1,0 +1,742 @@
+openapi: '3.1.1'
+info:
+  title: EvidenceChain.Api | v1
+  version: 1.0.0
+servers:
+  - url: http://localhost:5059/
+paths:
+  /health:
+    get:
+      tags:
+        - EvidenceChain.Api
+      responses:
+        '200':
+          description: OK
+  /api/v1/auth/token:
+    post:
+      tags:
+        - Auth
+      summary: Emite un JWT para un usuario demo (sin contraseña).
+      operationId: IssueToken
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Request'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/auth/users:
+    get:
+      tags:
+        - Auth
+      summary: Usuarios demo disponibles para iniciar sesión.
+      operationId: ListDemoUsers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+  /api/v1/evidence:
+    get:
+      tags:
+        - Evidence
+      summary: 'Bandeja de evidencias con filtros, orden por fecha y paginación keyset.'
+      operationId: ListEvidence
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: custodianId
+          in: query
+          schema:
+            pattern: '^-?(?:0|[1-9]\d*)$'
+            type:
+              - integer
+              - string
+            format: int32
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          schema:
+            pattern: '^-?(?:0|[1-9]\d*)$'
+            type:
+              - integer
+              - string
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidencePage'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/evidence/{id}':
+    get:
+      tags:
+        - Evidence
+      summary: Detalle de una evidencia con su transferencia pendiente y anomalía.
+      operationId: GetEvidence
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            pattern: '^-?(?:0|[1-9]\d*)$'
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceDetail'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/evidence/{id}/chain':
+    get:
+      tags:
+        - Evidence
+      summary: Línea de tiempo de eventos de custodia con sus hashes.
+      operationId: GetChain
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            pattern: '^-?(?:0|[1-9]\d*)$'
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/evidence/{id}/chain/verify':
+    get:
+      tags:
+        - Evidence
+      summary: Recalcula la cadena y devuelve el primer evento inválido si lo hay.
+      operationId: VerifyChain
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            pattern: '^-?(?:0|[1-9]\d*)$'
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/custody-transfers:
+    get:
+      tags:
+        - Transfers
+      summary: Bandeja de transferencias del custodio actual (status=pending&mine=true).
+      operationId: ListTransfers
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: mine
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      tags:
+        - Transfers
+      summary: Solicita una transferencia de custodia. Requiere Idempotency-Key.
+      operationId: RequestTransfer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Request'
+        required: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/HttpValidationProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/custody-transfers/{id}':
+    get:
+      tags:
+        - Transfers
+      summary: Estado actual de una transferencia (con ETag).
+      operationId: GetTransfer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/custody-transfers/{id}/accept':
+    post:
+      tags:
+        - Transfers
+      summary: Acepta la transferencia y mueve la custodia. Requiere If-Match.
+      operationId: AcceptTransfer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: 'null'
+                - $ref: '#/components/schemas/RespondTransferRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '428':
+          description: Precondition Required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/custody-transfers/{id}/reject':
+    post:
+      tags:
+        - Transfers
+      summary: Rechaza la transferencia; la custodia no cambia. Requiere If-Match.
+      operationId: RejectTransfer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: 'null'
+                - $ref: '#/components/schemas/RespondTransferRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '428':
+          description: Precondition Required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+components:
+  schemas:
+    AnomalySeverity:
+      enum:
+        - Media
+        - Alta
+    DemoUser:
+      required:
+        - id
+        - userName
+        - displayName
+        - role
+      type: object
+      properties:
+        id:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        userName:
+          type: string
+        displayName:
+          type: string
+        role:
+          type: string
+    EvidenceDetail:
+      required:
+        - id
+        - code
+        - description
+        - currentCustodian
+        - lastEventAtUtc
+        - integrityStatus
+        - integrityCheckedAtUtc
+        - createdAtUtc
+        - eventCount
+        - pendingTransfer
+      type: object
+      properties:
+        id:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        code:
+          type: string
+        description:
+          type: string
+        currentCustodian:
+          $ref: '#/components/schemas/UserSummary'
+        lastEventAtUtc:
+          type: string
+          format: date-time
+        integrityStatus:
+          $ref: '#/components/schemas/EvidenceIntegrityStatus'
+        integrityCheckedAtUtc:
+          type:
+            - 'null'
+            - string
+          format: date-time
+        createdAtUtc:
+          type: string
+          format: date-time
+        eventCount:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        pendingTransfer:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/TransferResponse'
+    EvidenceIntegrityStatus:
+      enum:
+        - NoVerificada
+        - Integra
+        - Comprometida
+    EvidenceListItem:
+      required:
+        - id
+        - code
+        - description
+        - currentCustodian
+        - lastEventAtUtc
+        - integrityStatus
+      type: object
+      properties:
+        id:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        code:
+          type: string
+        description:
+          type: string
+        currentCustodian:
+          $ref: '#/components/schemas/UserSummary'
+        lastEventAtUtc:
+          type: string
+          format: date-time
+        integrityStatus:
+          $ref: '#/components/schemas/EvidenceIntegrityStatus'
+    EvidencePage:
+      required:
+        - items
+        - nextCursor
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceListItem'
+        nextCursor:
+          type:
+            - 'null'
+            - string
+    EvidenceSummary:
+      required:
+        - id
+        - code
+        - description
+      type: object
+      properties:
+        id:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        code:
+          type: string
+        description:
+          type: string
+    HttpValidationProblemDetails:
+      type: object
+      properties:
+        type:
+          type:
+            - 'null'
+            - string
+        title:
+          type:
+            - 'null'
+            - string
+        status:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - 'null'
+            - integer
+            - string
+          format: int32
+        detail:
+          type:
+            - 'null'
+            - string
+        instance:
+          type:
+            - 'null'
+            - string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+    PendingTransferAnomaly:
+      required:
+        - rule
+        - severity
+        - message
+        - hoursPending
+        - thresholdHours
+        - evaluatedAtUtc
+      type: object
+      properties:
+        rule:
+          type: string
+        severity:
+          $ref: '#/components/schemas/AnomalySeverity'
+        message:
+          type: string
+        hoursPending:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        thresholdHours:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        evaluatedAtUtc:
+          type: string
+          format: date-time
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type:
+            - 'null'
+            - string
+        title:
+          type:
+            - 'null'
+            - string
+        status:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - 'null'
+            - integer
+            - string
+          format: int32
+        detail:
+          type:
+            - 'null'
+            - string
+        instance:
+          type:
+            - 'null'
+            - string
+    Request:
+      required:
+        - userName
+      type: object
+      properties:
+        userName:
+          type: string
+    RespondTransferRequest:
+      required:
+        - note
+      type: object
+      properties:
+        note:
+          type:
+            - 'null'
+            - string
+    Response:
+      required:
+        - accessToken
+        - tokenType
+        - expiresAtUtc
+        - user
+      type: object
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+        expiresAtUtc:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/DemoUser'
+    TransferResponse:
+      required:
+        - id
+        - evidence
+        - status
+        - reason
+        - requestedAtUtc
+        - respondedAtUtc
+        - responseNote
+        - fromCustodian
+        - toCustodian
+        - requestedBy
+        - respondedBy
+        - version
+        - anomaly
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        evidence:
+          $ref: '#/components/schemas/EvidenceSummary'
+        status:
+          $ref: '#/components/schemas/TransferStatus'
+        reason:
+          type: string
+        requestedAtUtc:
+          type: string
+          format: date-time
+        respondedAtUtc:
+          type:
+            - 'null'
+            - string
+          format: date-time
+        responseNote:
+          type:
+            - 'null'
+            - string
+        fromCustodian:
+          $ref: '#/components/schemas/UserSummary'
+        toCustodian:
+          $ref: '#/components/schemas/UserSummary'
+        requestedBy:
+          $ref: '#/components/schemas/UserSummary'
+        respondedBy:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/UserSummary'
+        version:
+          type: string
+        anomaly:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/PendingTransferAnomaly'
+    TransferStatus:
+      enum:
+        - Pendiente
+        - Aceptada
+        - Rechazada
+    UserSummary:
+      required:
+        - id
+        - userName
+        - displayName
+      type: object
+      properties:
+        id:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        userName:
+          type: string
+        displayName:
+          type: string
+tags:
+  - name: EvidenceChain.Api
+  - name: Auth
+  - name: Evidence
+  - name: Transfers

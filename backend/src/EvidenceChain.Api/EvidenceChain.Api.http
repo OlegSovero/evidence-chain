@@ -1,6 +1,63 @@
 @EvidenceChain.Api_HostAddress = http://localhost:5059
+@token = pega-aqui-el-accessToken
+@evidenceId = 1
+@transferId = 00000000-0000-0000-0000-000000000000
+@etag = "0x0000000000000000"
 
+### Salud
 GET {{EvidenceChain.Api_HostAddress}}/health
 Accept: application/json
 
-###
+### Usuarios demo (anónimo)
+GET {{EvidenceChain.Api_HostAddress}}/api/v1/auth/users
+Accept: application/json
+
+### Token (anónimo): usa un userName de la lista anterior
+POST {{EvidenceChain.Api_HostAddress}}/api/v1/auth/token
+Content-Type: application/json
+
+{ "userName": "c.rivas" }
+
+### Bandeja (keyset)
+GET {{EvidenceChain.Api_HostAddress}}/api/v1/evidence?pageSize=10&sort=desc
+Authorization: Bearer {{token}}
+
+### Detalle
+GET {{EvidenceChain.Api_HostAddress}}/api/v1/evidence/{{evidenceId}}
+Authorization: Bearer {{token}}
+
+### Línea de tiempo
+GET {{EvidenceChain.Api_HostAddress}}/api/v1/evidence/{{evidenceId}}/chain
+Authorization: Bearer {{token}}
+
+### Verificar cadena
+GET {{EvidenceChain.Api_HostAddress}}/api/v1/evidence/{{evidenceId}}/chain/verify
+Authorization: Bearer {{token}}
+
+### Solicitar transferencia (Investigador o Supervisor). Copia el ETag de la respuesta.
+POST {{EvidenceChain.Api_HostAddress}}/api/v1/custody-transfers
+Authorization: Bearer {{token}}
+Idempotency-Key: {{$guid}}
+Content-Type: application/json
+
+{ "evidenceId": {{evidenceId}}, "toCustodianId": 12, "reason": "Análisis en laboratorio" }
+
+### Bandeja del custodio (token del custodio destinatario)
+GET {{EvidenceChain.Api_HostAddress}}/api/v1/custody-transfers?status=pending&mine=true
+Authorization: Bearer {{token}}
+
+### Aceptar (token del custodio destinatario, If-Match con el ETag vigente)
+POST {{EvidenceChain.Api_HostAddress}}/api/v1/custody-transfers/{{transferId}}/accept
+Authorization: Bearer {{token}}
+If-Match: {{etag}}
+Content-Type: application/json
+
+{ "note": "Recibido en bóveda" }
+
+### Rechazar
+POST {{EvidenceChain.Api_HostAddress}}/api/v1/custody-transfers/{{transferId}}/reject
+Authorization: Bearer {{token}}
+If-Match: {{etag}}
+Content-Type: application/json
+
+{ "note": "Sin espacio en bóveda" }

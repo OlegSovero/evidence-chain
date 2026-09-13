@@ -4,10 +4,10 @@ Actualizar al terminar cada sesión de trabajo (humano o agente). Formato: `- [x
 
 ## Estado actual
 
-Fase: **Fase 2 (modelo de datos y dominio del hash) completa salvo el seeder; falta el scaffolding del frontend**.
+Fase: **Fase 3 (API) completa en `main`, salvo el despliegue en Azure. El seeder está en la rama `feat/deterministic-seed` (pendiente de integrar). Falta el scaffolding del frontend (Fase 4).**
 Entorno local verificado (2026-09-12): .NET SDK 10.0.302, Git 2.55, Node v24.21.0, npm 11.19.0, Docker 29.7.2 + Compose v5.5.1, todos funcionando.
-Existen las 5 entidades, la migración `InitialCreate` (con trigger append-only), `Domain/Hashing` y 27 tests en verde (unitarios + ida y vuelta en SQL Server con Testcontainers). La base local `EvidenceChain` ya tiene la migración aplicada; la cadena de conexión en user-secrets apunta a ella. `database/schema.sql` es el script idempotente exportado.
-Siguiente paso: seeder determinista (Fase 2) y luego Fase 3 (API). El frontend sigue pendiente de scaffolding.
+Backend: 5 entidades, migración `InitialCreate` (trigger append-only), `Domain/Hashing`, `Domain/Transfers` (máquina de estados), `Domain/Anomalies` (regla con `TimeProvider`), JWT demo (`POST /api/v1/auth/token`, `GET /api/v1/auth/users`), los 7 endpoints del contrato más `GET /custody-transfers?status=pending&mine=true` y `GET /custody-transfers/{id}`, filtro de idempotencia, ETag/If-Match, 409 con `currentState`. 88 tests en verde (unitarios + integración con Testcontainers). `openapi.yaml` exportado desde la API y verificado (11 rutas). User-secrets locales: `ConnectionStrings:Sql` (base `EvidenceChain`) y `Jwt:Key`.
+Siguiente paso: integrar `feat/deterministic-seed` en `main`, scaffolding del frontend (Fase 4) y esqueleto en Azure.
 
 ## Fase 0 — Planificación y contexto
 
@@ -34,14 +34,15 @@ Siguiente paso: seeder determinista (Fase 2) y luego Fase 3 (API). El frontend s
 
 ## Fase 3 — API (sábado)
 
-- [ ] JWT local con roles y endpoint de token para usuarios demo
-- [ ] ProblemDetails global
-- [ ] `GET /api/v1/evidence` (keyset, filtros, orden)
-- [ ] `GET /api/v1/evidence/{id}`, `/chain`, `/chain/verify`
-- [ ] Regla de anomalía (umbral configurable, severidad, mensaje)
-- [ ] `POST /api/v1/custody-transfers` con Idempotency-Key
-- [ ] `POST /accept` y `/reject` con If-Match y 409 con estado actual
-- [ ] Tests de integración: cadena alterada, idempotencia, 409
+- [x] JWT local con roles y endpoint de token para usuarios demo (`Features/Auth`, políticas `TransferRequester` y `Supervisor`)
+- [x] ProblemDetails global (`ApiProblems`, `UseExceptionHandler` + `UseStatusCodePages`; 401/403 también en `problem+json`)
+- [x] `GET /api/v1/evidence` (keyset, filtros, orden; cursor opaco con dirección)
+- [x] `GET /api/v1/evidence/{id}`, `/chain`, `/chain/verify` (verify actualiza `IntegrityStatus`/`IntegrityCheckedAtUtc`)
+- [x] Regla de anomalía (umbral configurable, severidad, mensaje) — `PendingTransferRule`, calculada al leer
+- [x] `POST /api/v1/custody-transfers` con Idempotency-Key (placeholder en la misma transacción; 422 si cambia el cuerpo; 2601/2627 → 409)
+- [x] `POST /accept` y `/reject` con If-Match y 409 con estado actual (428 sin cabecera, 403 si no es el destinatario)
+- [x] Tests de integración: cadena alterada, idempotencia, 409, 428, 403, keyset completo (88 tests en total)
+- [x] `openapi.yaml` exportado y verificado contra los endpoints; `GET /custody-transfers?status=pending&mine=true` y `GET /custody-transfers/{id}` como apoyo a la UI
 - [ ] Esqueleto desplegado en Azure (App Service + Azure SQL)
 
 ## Fase 4 — Frontend (domingo)
@@ -70,3 +71,4 @@ Siguiente paso: seeder determinista (Fase 2) y luego Fase 3 (API). El frontend s
 | 2026-09-11 | Oleg + Claude | `.gitignore`, `git init`, primer commit y push a `main`; verificado el entorno local (.NET 10, Git, Node LTS, Docker); `.claude/settings.json` sin co-autoría de Claude en commits; convención de workflow (agente commitea, Oleg pushea) documentada en `AGENTS.md` |
 | 2026-09-12 | Oleg + Claude | Fase 1 (backend): `docker-compose.yml` + `.env`/`.env.example` (SQL Server 2022, healthy); solución `backend/EvidenceChain.sln` (.sln clásico) con `EvidenceChain.Api` (Minimal APIs) y `EvidenceChain.Tests` (xUnit); estructura de carpetas del plan con `.gitkeep`; `Program.cs` transversal (ProblemDetails, OpenAPI, CORS por config, `AppDbContext` vacío, `GET /health` con `CanConnectAsync`); `ConnectionStrings:Sql` vía `dotnet user-secrets` (no en el repo); test de humo de `/health` con Testcontainers; `docs/` con los 5 archivos vacíos; `README.md`. Build sin warnings, tests en verde, `/health` verificado en vivo (200) contra el contenedor real. Frontend queda pendiente. |
 | 2026-09-12 | Oleg + Claude | Fase 2: enums (`tinyint`), 5 entidades en `Domain/`, configuraciones EF (datetime2(3), binary(32), rowversion, índices keyset/filtrado, checks, Restrict), conversor UTC + truncado a ms, migración `InitialCreate` con trigger append-only vía `migrationBuilder.Sql`, `dotnet-ef` como herramienta local, `database/schema.sql`. `Domain/Hashing` (serializador canónico v1 con `Utf8JsonWriter`, SHA-256, verificador con `SequenceGap`/`BrokenLink`/`HashMismatch`). 27 tests: golden JSON y golden hash, casos de alteración, ida y vuelta en SQL Server con ticks sub-ms, trigger rechaza UPDATE/DELETE. Borrador de la decisión de hash en `docs/decisions.md` y fila en `code-map.md`. |
+| 2026-09-13 | Oleg + Claude | Fase 3 (API, en `main` sin tocar `Seed/` ni `database/`): `TransferStateMachine` y `PendingTransferRule` (TimeProvider, Media/Alta, mensaje en español); `ETag`, `ApiProblems` (409 siempre con `currentState`), `SqlErrors`, `ChainAppender`; filtro `Idempotency-Key` por usuario con placeholder transaccional y replay (`Idempotent-Replayed`); JWT demo (`/auth/token`, `/auth/users`, claves `sub`/`name`/`role`); endpoints de evidencia (keyset con cursor opaco, detalle con anomalía, chain con hashes hex, verify que cachea `IntegrityStatus`) y transferencias (POST 201 + ETag, accept/reject con If-Match → 428/403/409, bandeja `mine=true`, `GET /{id}`). 88 tests (unitarios de dominio/ETag/cursor + integración: cadena alterada, idempotencia, carrera de If-Match, 428, 403, keyset). `openapi.yaml` exportado de `/openapi/v1.yaml`; humo contra el seed local: `EVD-DEMO-TAMPER` inválida en seq 2, `EVD-DEMO-ANOMALY` con anomalía Alta. `decisions.md` §2 y §3, `code-map.md` (4 filas), README y `.http`. |

@@ -47,14 +47,21 @@ docker-compose.yml SQL Server local
 
 ## Comandos
 
-Hay que completarlos cuando exista el scaffolding. No inventes comandos que no estén aquí o en el README.
+Verificados en la Fase 1 (scaffolding). No inventes comandos que no estén aquí o en el README.
 
 ```bash
-docker compose up -d                                   # SQL Server local
+docker compose up -d                                   # SQL Server local (espera a que quede "healthy")
 dotnet build backend/EvidenceChain.sln
-dotnet test backend/EvidenceChain.sln
-dotnet run --project backend/src/EvidenceChain.Api -- seed
-cd frontend && npm install && npm run dev
+dotnet test backend/EvidenceChain.sln                  # el proyecto de tests usa Testcontainers, necesita Docker corriendo
+dotnet run --project backend/src/EvidenceChain.Api      # GET /health en http://localhost:5059/health
+dotnet user-secrets set "ConnectionStrings:Sql" "..." --project backend/src/EvidenceChain.Api
+```
+
+Pendientes (aún no existen, no ejecutar todavía):
+
+```bash
+dotnet run --project backend/src/EvidenceChain.Api -- seed   # Fase 2
+cd frontend && npm install && npm run dev                    # Fase 1 (frontend)/4
 cd frontend && npm test
 ```
 

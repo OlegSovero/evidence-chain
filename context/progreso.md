@@ -4,10 +4,10 @@ Actualizar al terminar cada sesión de trabajo (humano o agente). Formato: `- [x
 
 ## Estado actual
 
-Fase: **Fase 1 (scaffolding de backend) completa; falta el scaffolding del frontend**.
+Fase: **Fase 2 (modelo de datos y dominio del hash) completa salvo el seeder; falta el scaffolding del frontend**.
 Entorno local verificado (2026-09-12): .NET SDK 10.0.302, Git 2.55, Node v24.21.0, npm 11.19.0, Docker 29.7.2 + Compose v5.5.1, todos funcionando.
-Backend compila, los tests pasan y `GET /health` responde 200 contra SQL Server real en Docker. No se implementó todavía dominio, migraciones, hash ni endpoints de negocio (eso es Fase 2/3).
-Siguiente paso: scaffolding del frontend (Vite + React + TS + React Router + TanStack Query), luego Fase 2 (dominio y datos).
+Existen las 5 entidades, la migración `InitialCreate` (con trigger append-only), `Domain/Hashing` y 27 tests en verde (unitarios + ida y vuelta en SQL Server con Testcontainers). La base local `EvidenceChain` ya tiene la migración aplicada; la cadena de conexión en user-secrets apunta a ella. `database/schema.sql` es el script idempotente exportado.
+Siguiente paso: seeder determinista (Fase 2) y luego Fase 3 (API). El frontend sigue pendiente de scaffolding.
 
 ## Fase 0 — Planificación y contexto
 
@@ -27,9 +27,9 @@ Siguiente paso: scaffolding del frontend (Vite + React + TS + React Router + Tan
 
 ## Fase 2 — Dominio y datos (viernes)
 
-- [ ] Entidades y migración inicial (Users, Evidence, CustodyEvents, CustodyTransfers, IdempotencyRecords)
-- [ ] Trigger append-only sobre CustodyEvents
-- [ ] `CanonicalEventSerializer`, `ChainHasher` y `ChainVerifier` con tests unitarios
+- [x] Entidades y migración inicial (Users, Evidence, CustodyEvents, CustodyTransfers, IdempotencyRecords)
+- [x] Trigger append-only sobre CustodyEvents
+- [x] `CanonicalEventSerializer`, `ChainHasher` y `ChainVerifier` con tests unitarios (golden JSON + golden hash) y test de ida y vuelta en SQL Server
 - [ ] Seeder determinista: 1.000 evidencias y 10.000 eventos, con caso íntegro, evento alterado y transferencia vencida
 
 ## Fase 3 — API (sábado)
@@ -69,3 +69,4 @@ Siguiente paso: scaffolding del frontend (Vite + React + TS + React Router + Tan
 | 2026-09-11 | Oleg + Claude | Análisis del enunciado, plan de arquitectura y contexto para agentes |
 | 2026-09-11 | Oleg + Claude | `.gitignore`, `git init`, primer commit y push a `main`; verificado el entorno local (.NET 10, Git, Node LTS, Docker); `.claude/settings.json` sin co-autoría de Claude en commits; convención de workflow (agente commitea, Oleg pushea) documentada en `AGENTS.md` |
 | 2026-09-12 | Oleg + Claude | Fase 1 (backend): `docker-compose.yml` + `.env`/`.env.example` (SQL Server 2022, healthy); solución `backend/EvidenceChain.sln` (.sln clásico) con `EvidenceChain.Api` (Minimal APIs) y `EvidenceChain.Tests` (xUnit); estructura de carpetas del plan con `.gitkeep`; `Program.cs` transversal (ProblemDetails, OpenAPI, CORS por config, `AppDbContext` vacío, `GET /health` con `CanConnectAsync`); `ConnectionStrings:Sql` vía `dotnet user-secrets` (no en el repo); test de humo de `/health` con Testcontainers; `docs/` con los 5 archivos vacíos; `README.md`. Build sin warnings, tests en verde, `/health` verificado en vivo (200) contra el contenedor real. Frontend queda pendiente. |
+| 2026-09-12 | Oleg + Claude | Fase 2: enums (`tinyint`), 5 entidades en `Domain/`, configuraciones EF (datetime2(3), binary(32), rowversion, índices keyset/filtrado, checks, Restrict), conversor UTC + truncado a ms, migración `InitialCreate` con trigger append-only vía `migrationBuilder.Sql`, `dotnet-ef` como herramienta local, `database/schema.sql`. `Domain/Hashing` (serializador canónico v1 con `Utf8JsonWriter`, SHA-256, verificador con `SequenceGap`/`BrokenLink`/`HashMismatch`). 27 tests: golden JSON y golden hash, casos de alteración, ida y vuelta en SQL Server con ticks sub-ms, trigger rechaza UPDATE/DELETE. Borrador de la decisión de hash en `docs/decisions.md` y fila en `code-map.md`. |

@@ -27,7 +27,7 @@ La API nunca lee secretos desde `appsettings*.json`. En Development, ASP.NET Cor
 dotnet user-secrets init --project backend/src/EvidenceChain.Api
 
 # Cadena de conexión a la SQL Server local (usa la misma contraseña que pusiste en .env)
-dotnet user-secrets set "ConnectionStrings:Sql" "Server=localhost,1433;User Id=sa;Password=<tu-password>;TrustServerCertificate=True;Encrypt=True;" --project backend/src/EvidenceChain.Api
+dotnet user-secrets set "ConnectionStrings:Sql" "Server=localhost,1433;Database=EvidenceChain;User Id=sa;Password=<tu-password>;TrustServerCertificate=True;Encrypt=True;" --project backend/src/EvidenceChain.Api
 
 # Clave para firmar los JWT locales (pendiente de usar hasta la Fase 3 - Auth)
 dotnet user-secrets set "Jwt:Key" "<una-clave-larga-y-aleatoria>" --project backend/src/EvidenceChain.Api
@@ -35,22 +35,31 @@ dotnet user-secrets set "Jwt:Key" "<una-clave-larga-y-aleatoria>" --project back
 
 En Azure, estos mismos valores se configuran como variables de entorno de la App Service (o Key Vault referenciado), nunca en el repo.
 
-## 3. Compilar y probar
+## 3. Crear la base de datos (migraciones EF Core)
+
+```bash
+dotnet tool restore                                               # instala dotnet-ef desde el manifiesto local del repo
+dotnet ef database update --project backend/src/EvidenceChain.Api
+```
+
+Crea la base `EvidenceChain` y aplica las migraciones: tablas, índices y el trigger append-only de `CustodyEvents`. Alternativa sin EF: ejecutar `database/schema.sql` (script idempotente exportado de las migraciones) con `sqlcmd` o SSMS.
+
+## 4. Compilar y probar
 
 ```bash
 dotnet build backend/EvidenceChain.sln
 dotnet test backend/EvidenceChain.sln
 ```
 
-El proyecto de tests levanta su propio SQL Server efímero con Testcontainers para las pruebas de integración (necesita Docker corriendo), independiente del contenedor de `docker compose`.
+Los tests unitarios (`tests/Unit/`) no necesitan base. Los de integración (`tests/Integration/`) levantan su propio SQL Server efímero con Testcontainers (necesitan Docker corriendo), independiente del contenedor de `docker compose`.
 
-## 4. Ejecutar la API
+## 5. Ejecutar la API
 
 ```bash
 dotnet run --project backend/src/EvidenceChain.Api
 ```
 
-`GET /health` devuelve `200 {"status":"healthy"}` si puede conectarse a SQL Server, o `503` si no.
+`GET /health` devuelve `200 {"status":"healthy"}` si puede conectarse a la base `EvidenceChain`, o `503` si no. En Development el documento OpenAPI está en `GET /openapi/v1.json`.
 
 ## Seed de datos (pendiente)
 
@@ -62,7 +71,7 @@ dotnet run --project backend/src/EvidenceChain.Api -- seed
 
 ## Frontend (pendiente)
 
-El scaffolding de `frontend/` (Vite + React + TypeScript) se agrega en una tarea posterior de la Fase 1/4. Cuando exista:
+El scaffolding de `frontend/` (Vite + React + TypeScript) se agrega en una tarea posterior. Cuando exista:
 
 ```bash
 cd frontend && npm install && npm run dev

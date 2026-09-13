@@ -43,14 +43,18 @@ openapi.yaml       contrato generado; debe coincidir con la implementación
 docker-compose.yml SQL Server local
 ```
 
-> Estado actual: solo existe el contexto. Las carpetas de código se crean en la fase de scaffolding (ver `context/progreso.md`).
+> Estado actual: backend con dominio, modelo EF, migración inicial y hashing con tests. Faltan seed, endpoints y frontend (ver `context/progreso.md`).
 
 ## Comandos
 
-Verificados en la Fase 1 (scaffolding). No inventes comandos que no estén aquí o en el README.
+Verificados en las Fases 1 y 2. No inventes comandos que no estén aquí o en el README.
 
 ```bash
 docker compose up -d                                   # SQL Server local (espera a que quede "healthy")
+dotnet tool restore                                    # instala dotnet-ef desde dotnet-tools.json
+dotnet ef database update --project backend/src/EvidenceChain.Api
+dotnet ef migrations add <Nombre> --project backend/src/EvidenceChain.Api --output-dir Infrastructure/Persistence/Migrations
+dotnet ef migrations script --idempotent --project backend/src/EvidenceChain.Api -o database/schema.sql
 dotnet build backend/EvidenceChain.sln
 dotnet test backend/EvidenceChain.sln                  # el proyecto de tests usa Testcontainers, necesita Docker corriendo
 dotnet run --project backend/src/EvidenceChain.Api      # GET /health en http://localhost:5059/health

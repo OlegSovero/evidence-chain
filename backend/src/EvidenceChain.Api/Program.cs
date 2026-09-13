@@ -38,6 +38,12 @@ app.MapGet("/health", async (AppDbContext db) =>
         : Results.Json(new { status = "unhealthy" }, statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
+if (args.Contains("seed"))
+{
+    await EvidenceChain.Api.Seed.DeterministicSeeder.RunAsync(app.Services);
+    return;
+}
+
 app.Run();
 
 public partial class Program;

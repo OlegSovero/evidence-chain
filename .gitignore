@@ -21,6 +21,9 @@ TestResults/
 [Cc]overage/
 *.trx
 
+# === Artefactos de despliegue (Azure ZipDeploy) ===
+*.zip
+
 # === Node / Vite / frontend ===
 node_modules/
 dist/

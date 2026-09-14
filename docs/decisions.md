@@ -44,4 +44,33 @@ Reglas del formato: `type` es el valor numérico del enum (renombrar un miembro 
 
 ## 4. Arquitectura Azure de producción
 
-Cómputo, Azure SQL, Blob Storage, Key Vault y Application Insights; separación de ambientes; primer indicador/alerta; estimación mensual para un equipo pequeño.
+_Pendiente de completar: cómputo, Azure SQL, Blob Storage, Key Vault y Application Insights; separación de ambientes; primer indicador/alerta; estimación mensual para un equipo pequeño._
+
+### Despliegue del backend: autenticación básica de SCM
+
+**Opción elegida.** El App Service (`evidencechain-api`, Linux, F1, West US 3) viene por defecto con **`SCM Basic Auth Publishing Credentials` deshabilitado** (`basicPublishingCredentialsPolicies/scm` → `allow: false`) — postura segura estándar de Azure para App Services nuevos. Para poder desplegar con `az webapp deploy --type zip` (ZipDeploy vía Kudu) desde esta máquina de desarrollo, se reactivó explícitamente:
+
+```bash
+az resource update --resource-group evidence-chain-rg --name scm --namespace Microsoft.Web \
+  --resource-type basicPublishingCredentialsPolicies --parent sites/evidencechain-api \
+  --set properties.allow=true
+```
+
+(Equivalente en el portal: App Service → Configuración → *General settings* → `SCM Basic Auth Publishing Credentials` → On.)
+
+**Cómo se detectó.** Un primer intento de ZipDeploy falló silenciosamente en la etapa "Extract zip" (causa real distinta, ver abajo); al intentar leer el log detallado de Kudu con las credenciales del publish profile (usuario/contraseña) se obtuvo `401 Unauthorized`. Un segundo intento con `az webapp deploy` devolvió `Kudu Status: 400` sin crear ningún registro de deployment (`az webapp log deployment list` vacío) — la petición nunca llegó a autenticarse. `az resource show` sobre `basicPublishingCredentialsPolicies/scm` confirmó `allow: false`.
+
+**Alternativa descartada.** Dejarlo deshabilitado y desplegar solo vía un pipeline de CI/CD autenticado con Azure AD (GitHub Actions + OIDC/Service Principal, que no depende de Basic Auth de Kudu). Es la opción correcta para producción, pero añade infraestructura de CI que no aporta al alcance de esta prueba técnica; se documenta como el camino a seguir si el proyecto continuara más allá de la entrega.
+
+**Costo asumido.** Basic Auth de Kudu expone un usuario/contraseña con permisos de despliegue si se filtran (van en el publish profile, nunca en el repo). Aceptable para una demo de tiempo acotado con un solo desarrollador desplegando manualmente.
+
+**Señal de cambio.** Antes de cualquier uso más allá de esta prueba técnica: desactivar de nuevo `SCM Basic Auth` y mover el despliegue a un pipeline con identidad federada (OIDC), que es el estándar recomendado por Azure y no reintroduce credenciales de larga duración.
+
+### Causa raíz real del primer fallo de deploy (para no repetirla)
+
+Un ZipDeploy anterior falló por dos motivos, ninguno relacionado con `web.config` (que en App Service **Linux** se ignora por completo — es config de IIS/Windows):
+
+1. El zip se generó comprimiendo la **carpeta** `publish/` en vez de su **contenido**: todas las entradas quedaban bajo `publish/EvidenceChain.Api.dll` en vez de `EvidenceChain.Api.dll` en la raíz, así que el runtime no encontraba el ensamblado de entrada tras extraer.
+2. El archivo `.deployment` incluido en el zip tenía contenido corrupto: el código PowerShell usado para generarlo (`@"..."@ | Out-File ...`) quedó escrito tal cual como contenido, en vez de solo el `[config]` / `command = ...` resultante. Kudu no podía parsearlo como INI válido.
+
+Corrección: eliminar `.deployment` (no hace falta ningún comando custom para un ZipDeploy de binario ya compilado) y regenerar el zip comprimiendo el contenido de `publish/` (no la carpeta).

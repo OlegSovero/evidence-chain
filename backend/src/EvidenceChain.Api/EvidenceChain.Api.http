@@ -1,63 +1,229 @@
-@EvidenceChain.Api_HostAddress = http://localhost:5059
-@token = pega-aqui-el-accessToken
-@evidenceId = 1
-@transferId = 00000000-0000-0000-0000-000000000000
-@etag = "0x0000000000000000"
+### Evidence Chain — flujos de ejemplo (extensión REST Client de VS Code)
+#
+# Requisitos: la API corriendo (`dotnet run --project backend/src/EvidenceChain.Api`)
+# y la base con datos (seed o al menos algunas evidencias). Los userName usados abajo
+# (c.rivas, lab.forense, boveda.central) son usuarios demo; ajústalos si tu seed usa otros.
+#
+# Ejecuta los bloques EN ORDEN de arriba hacia abajo: cada uno captura, con "# @name",
+# valores de su respuesta (token, id de evidencia, id de transferencia, ETag) que los
+# bloques siguientes reutilizan como variables. No hace falta copiar/pegar nada a mano.
 
-### Salud
-GET {{EvidenceChain.Api_HostAddress}}/health
+@host = http://localhost:5059
+
+# ============================================================
+# 1) Salud: confirma que la API está arriba y conectada a SQL Server.
+# ============================================================
+GET {{host}}/health
+
+###
+
+# ============================================================
+# 2) Usuarios demo (anónimo): lista los userName disponibles y su rol.
+#    Es el simplificado de "login" que documenta el README: sin contraseña.
+# ============================================================
+GET {{host}}/api/v1/auth/users
 Accept: application/json
 
-### Usuarios demo (anónimo)
-GET {{EvidenceChain.Api_HostAddress}}/api/v1/auth/users
-Accept: application/json
+###
 
-### Token (anónimo): usa un userName de la lista anterior
-POST {{EvidenceChain.Api_HostAddress}}/api/v1/auth/token
+# ============================================================
+# 3) Token para un Investigador (puede solicitar transferencias).
+# ============================================================
+# @name tokenInvestigador
+POST {{host}}/api/v1/auth/token
 Content-Type: application/json
 
 { "userName": "c.rivas" }
 
-### Bandeja (keyset)
-GET {{EvidenceChain.Api_HostAddress}}/api/v1/evidence?pageSize=10&sort=desc
-Authorization: Bearer {{token}}
+###
 
-### Detalle
-GET {{EvidenceChain.Api_HostAddress}}/api/v1/evidence/{{evidenceId}}
-Authorization: Bearer {{token}}
+# ============================================================
+# 4) Token para dos Custodios distintos: A (posible origen) y B (destino
+#    de la transferencia que solicitaremos más abajo).
+# ============================================================
+# @name tokenCustodioA
+POST {{host}}/api/v1/auth/token
+Content-Type: application/json
 
-### Línea de tiempo
-GET {{EvidenceChain.Api_HostAddress}}/api/v1/evidence/{{evidenceId}}/chain
-Authorization: Bearer {{token}}
+{ "userName": "lab.forense" }
 
-### Verificar cadena
-GET {{EvidenceChain.Api_HostAddress}}/api/v1/evidence/{{evidenceId}}/chain/verify
-Authorization: Bearer {{token}}
+###
 
-### Solicitar transferencia (Investigador o Supervisor). Copia el ETag de la respuesta.
-POST {{EvidenceChain.Api_HostAddress}}/api/v1/custody-transfers
-Authorization: Bearer {{token}}
+# @name tokenCustodioB
+POST {{host}}/api/v1/auth/token
+Content-Type: application/json
+
+{ "userName": "boveda.central" }
+
+###
+
+@investigadorToken = {{tokenInvestigador.response.body.$.accessToken}}
+@custodioAToken = {{tokenCustodioA.response.body.$.accessToken}}
+@custodioAId = {{tokenCustodioA.response.body.$.user.id}}
+@custodioBToken = {{tokenCustodioB.response.body.$.accessToken}}
+@custodioBId = {{tokenCustodioB.response.body.$.user.id}}
+
+# ============================================================
+# 5) Bandeja de evidencias con filtros (texto, custodio, estado) y
+#    orden por fecha descendente. Autenticado como Investigador.
+# ============================================================
+# @name listEvidence
+GET {{host}}/api/v1/evidence?q=EV&custodianId={{custodioAId}}&status=Integra&sort=desc&pageSize=5
+Authorization: Bearer {{investigadorToken}}
+
+###
+
+@nextCursor = {{listEvidence.response.body.$.nextCursor}}
+
+# ============================================================
+# 6) Segunda página de la misma bandeja: reutiliza el cursor keyset
+#    opaco devuelto arriba. Si nextCursor venía null, no hay más páginas
+#    y esta petición devolverá 400 (cursor vacío inválido).
+# ============================================================
+GET {{host}}/api/v1/evidence?q=EV&custodianId={{custodioAId}}&status=Integra&sort=desc&pageSize=5&cursor={{nextCursor}}
+Authorization: Bearer {{investigadorToken}}
+
+###
+
+# ============================================================
+# 7) Una evidencia del lote masivo cuyo custodio actual sea custodioA:
+#    código "EV-…" (no "EVD-DEMO-…", para evitar los 3 casos demo
+#    especiales) y custodianId=custodioA, para que en el paso 11 el
+#    destino (custodioB) nunca coincida con el custodio actual.
+# ============================================================
+# @name anyEvidence
+GET {{host}}/api/v1/evidence?q=EV-&custodianId={{custodioAId}}&pageSize=1&sort=desc
+Authorization: Bearer {{investigadorToken}}
+
+###
+
+@evidenceId = {{anyEvidence.response.body.$.items[0].id}}
+
+# ============================================================
+# 8) Detalle de la evidencia: custodio actual, estado de integridad y,
+#    si la hay, la transferencia pendiente con su anomalía calculada.
+# ============================================================
+GET {{host}}/api/v1/evidence/{{evidenceId}}
+Authorization: Bearer {{investigadorToken}}
+
+###
+
+# ============================================================
+# 9) Línea de tiempo de eventos de custodia: cada evento con su hash y
+#    el hash del evento anterior, en hexadecimal.
+# ============================================================
+GET {{host}}/api/v1/evidence/{{evidenceId}}/chain
+Authorization: Bearer {{investigadorToken}}
+
+###
+
+# ============================================================
+# 10) Verificar la cadena: recalcula los hashes desde el principio y,
+#     si algo no cuadra, devuelve la primera secuencia inválida y el
+#     motivo (HashMismatch, BrokenLink o SequenceGap).
+# ============================================================
+GET {{host}}/api/v1/evidence/{{evidenceId}}/chain/verify
+Authorization: Bearer {{investigadorToken}}
+
+###
+
+# ============================================================
+# 11) Solicitar una transferencia: requiere Idempotency-Key. Solo
+#     Investigador o Supervisor pueden solicitar. Si custodioB ya es el
+#     custodio actual de esta evidencia, cambia toCustodianId por
+#     {{custodioAId}} (el destino no puede ser el custodio actual).
+# ============================================================
+# @name requestTransfer
+POST {{host}}/api/v1/custody-transfers
+Authorization: Bearer {{investigadorToken}}
 Idempotency-Key: {{$guid}}
 Content-Type: application/json
 
-{ "evidenceId": {{evidenceId}}, "toCustodianId": 12, "reason": "Análisis en laboratorio" }
+{ "evidenceId": {{evidenceId}}, "toCustodianId": {{custodioBId}}, "reason": "Análisis en laboratorio forense" }
 
-### Bandeja del custodio (token del custodio destinatario)
-GET {{EvidenceChain.Api_HostAddress}}/api/v1/custody-transfers?status=pending&mine=true
-Authorization: Bearer {{token}}
+###
 
-### Aceptar (token del custodio destinatario, If-Match con el ETag vigente)
-POST {{EvidenceChain.Api_HostAddress}}/api/v1/custody-transfers/{{transferId}}/accept
-Authorization: Bearer {{token}}
-If-Match: {{etag}}
+@transferId = {{requestTransfer.response.body.$.id}}
+@transferVersion = {{requestTransfer.response.body.$.version}}
+
+# ============================================================
+# 12) Bandeja del custodio destinatario: transferencias pendientes que
+#     le corresponde aceptar o rechazar (mine=true por defecto).
+# ============================================================
+GET {{host}}/api/v1/custody-transfers?status=pending&mine=true
+Authorization: Bearer {{custodioBToken}}
+
+###
+
+# ============================================================
+# 13) Aceptar la transferencia: requiere If-Match con el ETag vigente
+#     (capturado como "version" en la respuesta del paso 11). Solo el
+#     custodio destinatario puede responder; mueve la custodia y
+#     devuelve un ETag nuevo.
+# ============================================================
+POST {{host}}/api/v1/custody-transfers/{{transferId}}/accept
+Authorization: Bearer {{custodioBToken}}
+If-Match: {{transferVersion}}
 Content-Type: application/json
 
 { "note": "Recibido en bóveda" }
 
-### Rechazar
-POST {{EvidenceChain.Api_HostAddress}}/api/v1/custody-transfers/{{transferId}}/reject
-Authorization: Bearer {{token}}
-If-Match: {{etag}}
+###
+
+# ============================================================
+# ERROR 1 — Idempotencia: dos peticiones con la MISMA Idempotency-Key
+# (fija, no un {{$guid}} que cambiaría en cada envío) y el MISMO cuerpo.
+# La API no crea una segunda transferencia: la segunda respuesta es la
+# respuesta guardada de la primera, con la cabecera
+# "Idempotent-Replayed: true" y el mismo id/ETag.
+# ============================================================
+@retryKey = demo-retry-0001
+
+# @name idempotentFirst
+POST {{host}}/api/v1/custody-transfers
+Authorization: Bearer {{investigadorToken}}
+Idempotency-Key: {{retryKey}}
 Content-Type: application/json
 
-{ "note": "Sin espacio en bóveda" }
+{ "evidenceId": {{evidenceId}}, "toCustodianId": {{custodioAId}}, "reason": "Prueba de idempotencia" }
+
+###
+
+# Reintento: misma clave (retryKey) y mismo cuerpo que la petición anterior.
+# Compara el "id" y el header ETag de esta respuesta con los de "idempotentFirst":
+# deben ser idénticos, y esta trae "Idempotent-Replayed: true".
+POST {{host}}/api/v1/custody-transfers
+Authorization: Bearer {{investigadorToken}}
+Idempotency-Key: {{retryKey}}
+Content-Type: application/json
+
+{ "evidenceId": {{evidenceId}}, "toCustodianId": {{custodioAId}}, "reason": "Prueba de idempotencia" }
+
+###
+
+# ============================================================
+# ERROR 2 — 409 Conflict: aceptar la MISMA transferencia una segunda
+# vez con el MISMO If-Match del paso 11 (ya usado y, tras el accept del
+# paso 13, obsoleto). El servidor responde 409 application/problem+json
+# con "currentState" (estado actual, versión vigente, quién y cuándo
+# respondió), para que la interfaz explique qué pasó sin adivinar.
+# ============================================================
+POST {{host}}/api/v1/custody-transfers/{{transferId}}/accept
+Authorization: Bearer {{custodioBToken}}
+If-Match: {{transferVersion}}
+Content-Type: application/json
+
+{ "note": "Segundo intento con el ETag ya usado" }
+
+###
+
+# ============================================================
+# ERROR 3 — 428 Precondition Required: falta la cabecera If-Match.
+# accept y reject siempre la exigen para no pisar una respuesta
+# concurrente de otro usuario; sin ella, ni siquiera se mira el cuerpo.
+# ============================================================
+POST {{host}}/api/v1/custody-transfers/{{transferId}}/reject
+Authorization: Bearer {{custodioBToken}}
+Content-Type: application/json
+
+{ "note": "Sin If-Match a propósito" }

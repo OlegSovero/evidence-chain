@@ -6,13 +6,28 @@ using EvidenceChain.Api.Features.Evidence;
 using EvidenceChain.Api.Features.Transfers;
 using EvidenceChain.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.OpenApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    // The native generator ids schemas by short type name only, so this codebase's
+    // convention of one nested "Request"/"Response" record per endpoint collides
+    // (e.g. IssueToken.Response and GetChain.Response both become "Response").
+    // Prefix nested types with their declaring type so every schema id stays unique.
+    options.CreateSchemaReferenceId = jsonTypeInfo =>
+    {
+        var baseId = OpenApiOptions.CreateDefaultSchemaReferenceId(jsonTypeInfo);
+        var type = jsonTypeInfo.Type;
+        return type is { IsNested: true, DeclaringType: not null }
+            ? $"{type.DeclaringType.Name}{baseId}"
+            : baseId;
+    };
+});
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));

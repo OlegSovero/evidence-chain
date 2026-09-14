@@ -22,7 +22,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Request'
+              $ref: '#/components/schemas/IssueTokenRequest'
         required: true
       responses:
         '200':
@@ -30,7 +30,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/IssueTokenResponse'
         '400':
           description: Bad Request
           content:
@@ -55,7 +55,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ListDemoUsersResponse'
   /api/v1/evidence:
     get:
       tags:
@@ -155,7 +155,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/GetChainResponse'
         '404':
           description: Not Found
           content:
@@ -182,7 +182,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/VerifyChainResponse'
         '404':
           description: Not Found
           content:
@@ -210,7 +210,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ListMyPendingTransfersResponse'
         '400':
           description: Bad Request
           content:
@@ -232,7 +232,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Request'
+              $ref: '#/components/schemas/RequestTransferRequest'
         required: true
       responses:
         '201':
@@ -405,26 +405,17 @@ components:
       enum:
         - Media
         - Alta
-    DemoUser:
-      required:
-        - id
-        - userName
-        - displayName
-        - role
-      type: object
-      properties:
-        id:
-          pattern: '^-?(?:0|[1-9]\d*)$'
-          type:
-            - integer
-            - string
-          format: int32
-        userName:
-          type: string
-        displayName:
-          type: string
-        role:
-          type: string
+    ChainFailureReason:
+      enum:
+        - HashMismatch
+        - BrokenLink
+        - SequenceGap
+    CustodyEventType:
+      enum:
+        - Registrada
+        - TransferenciaSolicitada
+        - TransferenciaAceptada
+        - TransferenciaRechazada
     EvidenceDetail:
       required:
         - id
@@ -537,6 +528,85 @@ components:
           type: string
         description:
           type: string
+    GetChainChainEvent:
+      required:
+        - id
+        - sequence
+        - eventType
+        - actor
+        - fromCustodian
+        - toCustodian
+        - transferId
+        - notes
+        - occurredAtUtc
+        - previousHash
+        - hash
+        - anomaly
+      type: object
+      properties:
+        id:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int64
+        sequence:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        eventType:
+          $ref: '#/components/schemas/CustodyEventType'
+        actor:
+          $ref: '#/components/schemas/UserSummary'
+        fromCustodian:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/UserSummary'
+        toCustodian:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/UserSummary'
+        transferId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        notes:
+          type:
+            - 'null'
+            - string
+        occurredAtUtc:
+          type: string
+          format: date-time
+        previousHash:
+          type: string
+        hash:
+          type: string
+        anomaly:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/PendingTransferAnomaly'
+    GetChainResponse:
+      required:
+        - evidenceId
+        - code
+        - events
+      type: object
+      properties:
+        evidenceId:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        code:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetChainChainEvent'
     HttpValidationProblemDetails:
       type: object
       properties:
@@ -569,6 +639,68 @@ components:
             type: array
             items:
               type: string
+    IssueTokenDemoUser:
+      required:
+        - id
+        - userName
+        - displayName
+        - role
+      type: object
+      properties:
+        id:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        userName:
+          type: string
+        displayName:
+          type: string
+        role:
+          type: string
+    IssueTokenRequest:
+      required:
+        - userName
+      type: object
+      properties:
+        userName:
+          type: string
+    IssueTokenResponse:
+      required:
+        - accessToken
+        - tokenType
+        - expiresAtUtc
+        - user
+      type: object
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+        expiresAtUtc:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/IssueTokenDemoUser'
+    ListDemoUsersResponse:
+      required:
+        - items
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueTokenDemoUser'
+    ListMyPendingTransfersResponse:
+      required:
+        - items
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransferResponse'
     PendingTransferAnomaly:
       required:
         - rule
@@ -626,12 +758,26 @@ components:
           type:
             - 'null'
             - string
-    Request:
+    RequestTransferRequest:
       required:
-        - userName
+        - evidenceId
+        - toCustodianId
+        - reason
       type: object
       properties:
-        userName:
+        evidenceId:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        toCustodianId:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        reason:
           type: string
     RespondTransferRequest:
       required:
@@ -642,23 +788,6 @@ components:
           type:
             - 'null'
             - string
-    Response:
-      required:
-        - accessToken
-        - tokenType
-        - expiresAtUtc
-        - user
-      type: object
-      properties:
-        accessToken:
-          type: string
-        tokenType:
-          type: string
-        expiresAtUtc:
-          type: string
-          format: date-time
-        user:
-          $ref: '#/components/schemas/DemoUser'
     TransferResponse:
       required:
         - id
@@ -735,6 +864,53 @@ components:
           type: string
         displayName:
           type: string
+    VerifyChainInvalidEvent:
+      required:
+        - sequence
+        - reason
+      type: object
+      properties:
+        sequence:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        reason:
+          $ref: '#/components/schemas/ChainFailureReason'
+    VerifyChainResponse:
+      required:
+        - evidenceId
+        - isValid
+        - integrityStatus
+        - checkedAtUtc
+        - eventCount
+        - firstInvalidEvent
+      type: object
+      properties:
+        evidenceId:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        isValid:
+          type: boolean
+        integrityStatus:
+          $ref: '#/components/schemas/EvidenceIntegrityStatus'
+        checkedAtUtc:
+          type: string
+          format: date-time
+        eventCount:
+          pattern: '^-?(?:0|[1-9]\d*)$'
+          type:
+            - integer
+            - string
+          format: int32
+        firstInvalidEvent:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/VerifyChainInvalidEvent'
 tags:
   - name: EvidenceChain.Api
   - name: Auth

@@ -94,20 +94,44 @@ Invoke-WebRequest http://localhost:5059/openapi/v1.yaml -OutFile openapi.yaml
 
 ## Seed de datos
 
-El seeder determinista (1.000 evidencias, 10.000 eventos, con un caso íntegro, uno alterado y una transferencia vencida) se integra desde la rama `feat/deterministic-seed`. Cuando esté en `main`:
+Seeder determinista (semilla 42): 1.000 evidencias, 10.002 eventos de custodia y 12 usuarios demo, con tres casos fijos (`EVD-DEMO-INTACT` íntegra, `EVD-DEMO-TAMPER` con un evento alterado y `EVD-DEMO-ANOMALY` con una transferencia vencida). Ver `database/README.md` para el detalle.
 
 ```bash
 dotnet run --project backend/src/EvidenceChain.Api -- seed
 ```
 
-## Frontend (pendiente)
+Es idempotente: se puede volver a ejecutar contra la misma base para restaurar el estado determinista (por ejemplo, después de probar transferencias a mano).
 
-El scaffolding de `frontend/` (Vite + React + TypeScript) se agrega en una tarea posterior. Cuando exista:
+## Frontend
+
+Vite + React 19 + TypeScript, con React Router (rutas en la URL) y TanStack Query (cacheo, cancelación de solicitudes con `AbortSignal` y mutaciones optimistas). Los tipos del contrato se escriben a mano en `frontend/src/api/types.ts`: `openapi-typescript` se probó primero, pero el `openapi.yaml` exportado tiene un bug de generación en el backend (`ListDemoUsers`, `GetChain`, `VerifyChain` y `ListTransfers` comparten por error el schema `Response` porque sus records anidados se llaman igual) — ver `context/ai-log.md`.
 
 ```bash
-cd frontend && npm install && npm run dev
-cd frontend && npm test
+cd frontend
+npm install
+cp .env.example .env        # VITE_API_URL=http://localhost:5059 (ajusta si tu API corre en otro puerto)
+npm run dev                 # http://localhost:5173, con la API de arriba ya corriendo
+npm test                    # Vitest + Testing Library + MSW
+npm run build               # tsc -b && vite build
 ```
+
+CORS: `appsettings.json` ya permite `http://localhost:5173` (`Cors:AllowedOrigins`); en Azure/Vercel, agrega el dominio real de la SPA a esa lista.
+
+### Cómo usarlo en la demo
+
+1. Con la API y `npm run dev` corriendo, abre `http://localhost:5173`.
+2. Elige un usuario demo en el selector del encabezado (p. ej. un Investigador) — pide el token a `/api/v1/auth/token` y lo guarda en `sessionStorage`.
+3. **Evidencias**: filtra por texto (con debounce), custodio y estado de integridad; ordena por fecha; los filtros viven en la URL (recarga o comparte el enlace y se conservan). Paginación keyset con "Siguiente"/"Anterior".
+4. Abre una evidencia: línea de tiempo de eventos, botón **Verificar cadena** (resalta el primer evento inválido si la cadena está rota) y el aviso de anomalía si hay una transferencia vencida.
+5. Como Investigador/Supervisor, **Solicitar transferencia** abre un modal accesible (foco atrapado, Escape cierra, el foco vuelve al botón). Al enviar, la transferencia aparece pendiente de inmediato (optimista); un error o un 409 la revierte y explica qué pasó.
+6. Cambia al usuario Custodio destino y ve a **Transferencias**: acepta o rechaza con una nota opcional. Si otro custodio ya respondió o la versión cambió, el 409 se explica con el estado real devuelto por el servidor.
+
+### Pruebas mínimas del frontend
+
+- `src/features/evidence/InboxPage.test.tsx`: una búsqueda lenta que responde tarde no reemplaza el resultado de la búsqueda posterior ya renderizada (aislamiento por `queryKey` de TanStack Query + `AbortSignal`).
+- `src/features/transfers/PendingInboxPage.test.tsx`: al aceptar una transferencia, la lista la quita de inmediato (optimista) y, si el servidor responde 409, la restituye con el mensaje de error — nunca queda como confirmada.
+
+No se agregaron pruebas de accesibilidad del modal (trampa de foco/retorno de foco) ni de reconciliación en `DetailPage`: el enunciado pide explícitamente esas dos y el resto se verificó a mano contra la API real (ver sección "Cómo usarlo en la demo").
 
 ## Estructura
 

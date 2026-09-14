@@ -74,3 +74,42 @@ Un ZipDeploy anterior falló por dos motivos, ninguno relacionado con `web.confi
 2. El archivo `.deployment` incluido en el zip tenía contenido corrupto: el código PowerShell usado para generarlo (`@"..."@ | Out-File ...`) quedó escrito tal cual como contenido, en vez de solo el `[config]` / `command = ...` resultante. Kudu no podía parsearlo como INI válido.
 
 Corrección: eliminar `.deployment` (no hace falta ningún comando custom para un ZipDeploy de binario ya compilado) y regenerar el zip comprimiendo el contenido de `publish/` (no la carpeta).
+
+### Segunda causa: separadores de ruta de `Compress-Archive` y build en Kudu
+
+**El problema.** Con el zip ya corregido, el deploy seguía fallando en la etapa "Building the app…", con `rsync` rechazando cada archivo dentro de una subcarpeta:
+
+```
+rsync: failed to stat "/home/site/wwwroot/de\Microsoft.Data.SqlClient.resources.dll": Invalid argument (22)
+rsync: failed to stat "/home/site/wwwroot/runtimes\win-x64\native\Microsoft.Data.SqlClient.SNI.dll": Invalid argument (22)
+```
+
+`Compress-Archive` de PowerShell (Windows) escribió las rutas internas del zip con `\` en vez de `/`. El estándar ZIP exige `/`; en Linux, `\` es un carácter de archivo normal, no un separador — así que `de\Microsoft...dll` se interpreta como un nombre de archivo plano, no como `de/Microsoft...dll` dentro de una carpeta `de`, y la sincronización de Kudu no puede reconciliarlo. Solo los archivos en la raíz del zip (sin subcarpeta) se habían librado hasta ahora.
+
+**Opción elegida.** Generar el zip con `tar` (incluido en Windows 10/11, basado en `libarchive`, siempre usa `/`) en vez de `Compress-Archive`:
+
+```powershell
+cd backend\publish
+tar -a -c -f ..\publish.zip *
+```
+
+Además, se fijó `SCM_DO_BUILD_DURING_DEPLOYMENT=false` en el App Service:
+
+```bash
+az webapp config appsettings set --resource-group evidence-chain-rg --name evidencechain-api \
+  --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false
+```
+
+**Por qué esto además del zip.** Sin este ajuste, Kudu trata cualquier ZipDeploy como código **fuente** y lo pasa por su pipeline de build/sincronización (Oryx + `rsync`) — el mismo pipeline donde reventó el error de `\`. El binario ya se compiló en local con `dotnet publish`; pedirle a Azure que lo "compile" de nuevo es trabajo duplicado y, en este caso, la causa directa del fallo. Con la variable en `false`, Kudu solo extrae el zip a `wwwroot` y arranca — sin Oryx, sin `rsync`, sin el problema de separadores.
+
+**Cuándo sí conviene que Kudu compile (`SCM_DO_BUILD_DURING_DEPLOYMENT=true`, el default).** Solo cuando Azure es el *único* mecanismo de build — por ejemplo, integración Git directa de App Service (`git push` de código fuente sin pipeline externo) o una demo rápida sin CI. En cualquier proyecto con un pipeline de CI/CD real (GitHub Actions, Azure Pipelines), el build vive en el runner (`dotnet build`/`test`/`publish` como steps explícitos, con sus propios logs y artefactos versionados) y App Service solo recibe el artefacto ya compilado y probado — dejar `true` en ese caso duplicaría el build y rompería la garantía de "lo desplegado es justo lo que pasó CI".
+
+**Alternativa descartada.** Seguir con `Compress-Archive` normalizando manualmente los separadores de cada entrada del zip (posible vía `System.IO.Compression.ZipFile` a bajo nivel), o cambiar a 7-Zip. Más frágil y con más pasos que simplemente usar `tar`, que ya viene instalado y resuelve el problema en el origen.
+
+**Costo asumido.** `tar` en Windows es un wrapper de `bsdtar`/`libarchive`; funciona igual en cualquier Windows 10 (1803+)/11 sin instalar nada, pero es una dependencia menos "nativa" de PowerShell que `Compress-Archive` — cualquier script de empaquetado debe usar `tar`, no `Compress-Archive`, para este proyecto.
+
+**Señal de cambio.** En cuanto exista un pipeline de CI/CD (GitHub Actions), este empaquetado manual desaparece: el runner (Linux, normalmente) no tiene el problema de separadores de Windows, y el `dotnet publish` + `az webapp deploy`/`actions-deploy` del workflow reemplaza estos pasos manuales.
+
+**Verificado.** Tras aplicar ambos cambios, el deploy quedó en `status: 4` (Success) en `az webapp log deployment list`, el contenedor arrancó ("Now listening on: http://[::]:8080", "Application started") y `GET /health` respondió `200 {"status":"healthy"}` contra la URL pública, confirmando conexión real a Azure SQL.
+
+**Nota aparte, sin resolver.** `az webapp deploy --type zip` (el comando recomendado, no deprecado) devolvía `Kudu Status: 400` con cuerpo vacío en cada intento, incluso con Basic Auth ya habilitado y el zip corregido — mientras que el comando deprecado `az webapp deployment source config-zip` sí completó el deploy con éxito usando el mismo zip. No se investigó la causa exacta de ese 400 (posiblemente una particularidad del endpoint `/api/publish` de OneDeploy en este App Service); si se retoma el despliegue manual, usar `config-zip` pese al aviso de deprecación, o preferir un pipeline de CI/CD que no dependa de ninguno de los dos.

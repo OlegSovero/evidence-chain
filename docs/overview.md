@@ -30,7 +30,7 @@ dotnet test backend/EvidenceChain.sln                              # 94 tests (n
 dotnet run --project backend/src/EvidenceChain.Api                 # API en :5059
 
 cd frontend && npm install && npm run dev                          # SPA en :5173
-cd frontend && npm test                                            # 2 tests (Vitest + MSW)
+cd frontend && npm test                                            # 4 tests (Vitest + MSW)
 ```
 
 Producción real, sin datos simulados: backend en Azure App Service (`GET /health` valida conexión real a Azure SQL) y frontend en Vercel (`https://evidence-chain-frontend.vercel.app`) consumiéndolo.

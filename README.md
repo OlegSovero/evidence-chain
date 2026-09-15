@@ -129,7 +129,8 @@ CORS: `appsettings.json` ya permite `http://localhost:5173` (`Cors:AllowedOrigin
 ### Pruebas mínimas del frontend
 
 - `src/features/evidence/InboxPage.test.tsx`: una búsqueda lenta que responde tarde no reemplaza el resultado de la búsqueda posterior ya renderizada (aislamiento por `queryKey` de TanStack Query + `AbortSignal`).
-- `src/features/transfers/PendingInboxPage.test.tsx`: al aceptar una transferencia, la lista la quita de inmediato (optimista) y, si el servidor responde 409, la restituye con el mensaje de error — nunca queda como confirmada.
+- `src/features/transfers/PendingInboxPage.test.tsx`: al aceptar una transferencia, la lista la quita de inmediato (optimista) y, si el servidor responde 409, la restituye con el mensaje de error; ese aviso sigue visible tras la reconciliación en segundo plano aunque el ítem ya no vuelva a la lista — nunca queda como confirmada.
+- `src/auth/AuthContext.test.tsx`: un 401 sobre una petición autenticada cierra la sesión y vuelve al selector (en vez de dejar el usuario marcado como activo con cada página mostrando su propio error); un 401 sin sesión activa no dispara ese mismo camino.
 
 No se agregaron pruebas de accesibilidad del modal (trampa de foco/retorno de foco) ni de reconciliación en `DetailPage`: el enunciado pide explícitamente esas dos y el resto se verificó a mano contra la API real (ver sección "Cómo usarlo en la demo").
 

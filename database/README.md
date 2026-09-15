@@ -19,7 +19,7 @@ docker compose ps
 La cadena de conexión para desarrollo local se gestiona vía `dotnet user-secrets`:
 
 ```bash
-dotnet user-secrets set "ConnectionStrings:Sql" "Server=localhost,1433;Database=EvidenceChain;User Id=sa;Password=EvChain_Dev_2026!Pw;TrustServerCertificate=True;Encrypt=True;" --project backend/src/EvidenceChain.Api
+dotnet user-secrets set "ConnectionStrings:Sql" "Server=localhost,1433;Database=EvidenceChain;User Id=sa;Password=<tu-password>;TrustServerCertificate=True;Encrypt=True;" --project backend/src/EvidenceChain.Api
 ```
 
 ---

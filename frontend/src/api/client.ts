@@ -3,6 +3,12 @@ import type { ProblemDetails } from './types';
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5059';
 
+// AuthContext escucha este evento para cerrar sesión y volver al selector.
+// Solo se dispara cuando la petición SÍ llevaba un token (sesión vencida o
+// inválida) — una petición sin token que recibe 401 es un estado normal de
+// "sin sesión", no una sesión que expiró, y no debe repetir el ciclo.
+export const UNAUTHORIZED_EVENT = 'evidence-chain:unauthorized';
+
 // Error tipado que conserva el status y el problem+json completo (incluido
 // currentState en los 409) para que cada llamador decida cómo reaccionar.
 export class ApiError extends Error {
@@ -74,7 +80,11 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   });
 
   if (!response.ok) {
-    throw new ApiError(response.status, await readProblem(response));
+    const problem = await readProblem(response);
+    if (response.status === 401 && token) {
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    }
+    throw new ApiError(response.status, problem);
   }
 
   if (response.status === 204) {

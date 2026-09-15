@@ -1,6 +1,7 @@
-import { createContext, useCallback, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { issueToken } from '../api/auth';
+import { UNAUTHORIZED_EVENT } from '../api/client';
 import type { DemoUser } from '../api/types';
 import { clearSession, readSession, writeSession, type Session } from './session';
 
@@ -49,6 +50,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
     void queryClient.invalidateQueries();
   }, [queryClient]);
+
+  // Ante un token vencido o inválido (ver UNAUTHORIZED_EVENT en api/client.ts),
+  // cierra sesión igual que un logout manual: vuelve al selector en vez de
+  // dejar cada página con su propio error de "no autorizado" y el usuario
+  // todavía marcado como activo en el header.
+  useEffect(() => {
+    window.addEventListener(UNAUTHORIZED_EVENT, logout);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, logout);
+  }, [logout]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ user: session?.user ?? null, isSwitching, error, login, logout }),

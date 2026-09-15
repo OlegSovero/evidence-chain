@@ -113,3 +113,28 @@ az webapp config appsettings set --resource-group evidence-chain-rg --name evide
 **Verificado.** Tras aplicar ambos cambios, el deploy quedó en `status: 4` (Success) en `az webapp log deployment list`, el contenedor arrancó ("Now listening on: http://[::]:8080", "Application started") y `GET /health` respondió `200 {"status":"healthy"}` contra la URL pública, confirmando conexión real a Azure SQL.
 
 **Nota aparte, sin resolver.** `az webapp deploy --type zip` (el comando recomendado, no deprecado) devolvía `Kudu Status: 400` con cuerpo vacío en cada intento, incluso con Basic Auth ya habilitado y el zip corregido — mientras que el comando deprecado `az webapp deployment source config-zip` sí completó el deploy con éxito usando el mismo zip. No se investigó la causa exacta de ese 400 (posiblemente una particularidad del endpoint `/api/publish` de OneDeploy en este App Service); si se retoma el despliegue manual, usar `config-zip` pese al aviso de deprecación, o preferir un pipeline de CI/CD que no dependa de ninguno de los dos.
+
+### CORS entre el frontend en Vercel y el backend en Azure
+
+**El problema.** Tras desplegar el frontend en Vercel, la API en Azure devolvía CORS bloqueado. La causa **no** estaba en `Program.cs`, sino en cómo se configuró la variable de entorno: `Cors__AllowedOrigins` en Azure tenía el valor literal `["https://*.vercel.app"]` — un string con sintaxis de array JSON, no un array real. Las variables de entorno de .NET **no parsean JSON**; para vincular un array (`Cors:AllowedOrigins` es `string[]` en `appsettings.json`), hace falta el formato indexado: `Cors__AllowedOrigins__0`, `__1`, etc. Con un solo string plano, `GetSection("Cors:AllowedOrigins").Get<string[]>()` no encuentra hijos indexados y el array queda vacío.
+
+Además, el string usaba `*` como comodín de subdominio (`https://*.vercel.app`), algo que `policy.WithOrigins(...)` de ASP.NET Core **no soporta** — hace comparación exacta de string contra el header `Origin` del navegador, sin *glob* ni regex.
+
+**Opción elegida.** Corregir solo la variable de Azure al formato correcto, con el dominio **exacto** de producción de Vercel (que es estable entre despliegues, no cambia con cada `git push`):
+
+```bash
+az webapp config appsettings set --resource-group evidence-chain-rg --name evidencechain-api \
+  --settings "Cors__AllowedOrigins__0=https://evidence-chain-frontend.vercel.app"
+```
+
+No se tocó `Program.cs`: como el dominio de producción no cambia, `WithOrigins` con el valor exacto es suficiente y más simple que `SetIsOriginAllowed` con lógica de comodín (que sí habría hecho falta para aceptar además los *preview deployments* de Vercel, con subdominios aleatorios por PR — no necesario para esta entrega).
+
+**Alternativa descartada.** `SetIsOriginAllowed(origin => origin.EndsWith(".vercel.app"))` para aceptar cualquier subdominio de Vercel. Más flexible (cubriría previews), pero también más permisivo de lo necesario y sin beneficio real cuando solo existe un dominio de producción fijo que consumir.
+
+**Costo asumido.** Si en el futuro se prueban *preview deployments* de Vercel (subdominios distintos por rama/PR) contra esta misma API, habrá que añadir cada uno a mano (`Cors__AllowedOrigins__1`, `__2`…) o migrar a `SetIsOriginAllowed` con comprobación de sufijo.
+
+**Señal de cambio.** Si se automatiza el despliegue de previews de Vercel contra este backend, cambiar a `SetIsOriginAllowed` con una comprobación de sufijo (`.EndsWith(".vercel.app")`) en vez de seguir añadiendo orígenes exactos uno por uno.
+
+**Verificado.** Con `curl` simulando un preflight real (`OPTIONS /api/v1/evidence` con `Origin: https://evidence-chain-frontend.vercel.app` y `Access-Control-Request-Method/Headers`): `204` con `Access-Control-Allow-Origin` reflejando el origen exacto. La respuesta real (`GET` sin token) también lleva el header CORS — el `401 Unauthorized` que se veía era comportamiento esperado (sin `Authorization`, no relacionado con CORS), no un bug adicional.
+
+**Nota aparte.** La URL de Vercel usada durante el troubleshooting inicial (con un sufijo aleatorio por-deployment, `evidence-chain-frontend-<hash>-evidence-chain.vercel.app`) está protegida por "Vercel Authentication" (redirige a `vercel.com/sso-api`) y no debe compartirse con los evaluadores. El dominio de **producción** (`evidence-chain-frontend.vercel.app`, sin sufijo) queda exento de esa protección y es público — es el que hay que usar.

@@ -104,7 +104,7 @@ Es idempotente: se puede volver a ejecutar contra la misma base para restaurar e
 
 ## Frontend
 
-Vite + React 19 + TypeScript, con React Router (rutas en la URL) y TanStack Query (cacheo, cancelación de solicitudes con `AbortSignal` y mutaciones optimistas). Los tipos del contrato se escriben a mano en `frontend/src/api/types.ts`: `openapi-typescript` se probó primero, pero el `openapi.yaml` exportado tiene un bug de generación en el backend (`ListDemoUsers`, `GetChain`, `VerifyChain` y `ListTransfers` comparten por error el schema `Response` porque sus records anidados se llaman igual) — ver `context/ai-log.md`.
+Vite + React 19 + TypeScript, con React Router (rutas en la URL) y TanStack Query (cacheo, cancelación de solicitudes con `AbortSignal` y mutaciones optimistas). Los tipos del contrato se escriben a mano en `frontend/src/api/types.ts`: `openapi-typescript` se probó primero, pero en ese momento `openapi.yaml` tenía un bug de generación en el backend (`ListDemoUsers`, `GetChain`, `VerifyChain` y `ListTransfers` compartían por error el schema `Response` porque sus records anidados se llamaban igual) — corregido después (ver `docs/ai-usage.md`), pero los tipos a mano no dependían de esa corrección y se mantuvieron.
 
 ```bash
 cd frontend
@@ -115,7 +115,7 @@ npm test                    # Vitest + Testing Library + MSW
 npm run build               # tsc -b && vite build
 ```
 
-CORS: `appsettings.json` ya permite `http://localhost:5173` (`Cors:AllowedOrigins`); en Azure/Vercel, agrega el dominio real de la SPA a esa lista.
+CORS: `appsettings.json` ya permite `http://localhost:5173` (`Cors:AllowedOrigins`) para desarrollo local. En Azure, el dominio real de la SPA va como variable de entorno del App Service, en formato indexado (los arrays no se pueden pasar como un string con sintaxis JSON): `Cors__AllowedOrigins__0=https://tu-dominio.vercel.app`. Detalle de por qué en [`docs/decisions.md`](./docs/decisions.md#4-arquitectura-azure-de-producción).
 
 ### Cómo usarlo en la demo
 
@@ -132,6 +132,13 @@ CORS: `appsettings.json` ya permite `http://localhost:5173` (`Cors:AllowedOrigin
 - `src/features/transfers/PendingInboxPage.test.tsx`: al aceptar una transferencia, la lista la quita de inmediato (optimista) y, si el servidor responde 409, la restituye con el mensaje de error — nunca queda como confirmada.
 
 No se agregaron pruebas de accesibilidad del modal (trampa de foco/retorno de foco) ni de reconciliación en `DetailPage`: el enunciado pide explícitamente esas dos y el resto se verificó a mano contra la API real (ver sección "Cómo usarlo en la demo").
+
+## Producción (Azure + Vercel)
+
+- **Frontend**: [evidence-chain-frontend.vercel.app](https://evidence-chain-frontend.vercel.app) (Vite build, desplegado desde `main` vía integración de Vercel con GitHub).
+- **Backend**: Azure App Service Linux (plan F1), conectado a Azure SQL Database real — sin datos simulados. Puede estar detenido fuera de la sesión de evaluación (plan gratuito, sin costo por estar apagado); se reinicia desde el portal de Azure o `az webapp start --resource-group evidence-chain-rg --name evidencechain-api`.
+- Variables de entorno del App Service: `ConnectionStrings__Sql`, `Jwt__Key`, `Cors__AllowedOrigins__0` (dominio de Vercel, formato indexado — ver arriba), `ASPNETCORE_ENVIRONMENT=Production`, `SCM_DO_BUILD_DURING_DEPLOYMENT=false`. Ninguna vive en el repo.
+- Arquitectura Azure propuesta para un uso real (más allá de esta demo gratuita), con estimación de costo mensual, en [`docs/decisions.md`](./docs/decisions.md#4-arquitectura-azure-de-producción).
 
 ## Estructura
 

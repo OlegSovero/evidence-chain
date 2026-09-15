@@ -1,4 +1,4 @@
-# Decisions
+﻿# Decisions
 
 _Máximo dos páginas. Cuatro decisiones: opción elegida, alternativa descartada, costo asumido y señal de cambio._
 
@@ -44,97 +44,39 @@ Reglas del formato: `type` es el valor numérico del enum (renombrar un miembro 
 
 ## 4. Arquitectura Azure de producción
 
-_Pendiente de completar: cómputo, Azure SQL, Blob Storage, Key Vault y Application Insights; separación de ambientes; primer indicador/alerta; estimación mensual para un equipo pequeño._
+**Opción elegida.** Para un equipo pequeño con este perfil de tráfico (herramienta interna forense, uso intermitente, no consumidor masivo), se propone:
 
-### Despliegue del backend: autenticación básica de SCM
+| Componente | Servicio | Nivel |
+|---|---|---|
+| Cómputo | Azure App Service (Linux) | **B1** (Basic, 1 core/1.75 GB) — no F1 |
+| Base de datos | Azure SQL Database | **Serverless**, General Purpose, Gen5, 1 vCore, auto-pause deshabilitado en prod |
+| Almacenamiento de evidencia | Azure Blob Storage | Hot tier + *immutable storage* (WORM) |
+| Secretos | Azure Key Vault | Standard, referenciado por *Managed Identity* |
+| Observabilidad | Application Insights | Pay-as-you-go |
 
-**Opción elegida.** El App Service (`evidencechain-api`, Linux, F1, West US 3) viene por defecto con **`SCM Basic Auth Publishing Credentials` deshabilitado** (`basicPublishingCredentialsPolicies/scm` → `allow: false`) — postura segura estándar de Azure para App Services nuevos. Para poder desplegar con `az webapp deploy --type zip` (ZipDeploy vía Kudu) desde esta máquina de desarrollo, se reactivó explícitamente:
+Esta demo corre en el nivel **gratuito** (App Service F1 + Azure SQL con la oferta *free*) porque cumple el objetivo de esta prueba técnica a costo cero; la tabla de arriba es lo que se recomendaría para un uso real más allá de la evaluación.
 
-```bash
-az resource update --resource-group evidence-chain-rg --name scm --namespace Microsoft.Web \
-  --resource-type basicPublishingCredentialsPolicies --parent sites/evidencechain-api \
-  --set properties.allow=true
-```
+**Cómputo — por qué B1 y no F1 ni Container Apps.** F1 (usado en esta demo) no tiene SLA, comparte cómputo con otros inquilinos, tiene una cuota diaria de CPU muy ajustada y no soporta *deployment slots* (necesarios para *swap* sin downtime) ni dominios personalizados con certificado. B1 es el primer nivel con SLA, cómputo dedicado y slots. Se descartó Azure Container Apps (serverless, escala a cero, pago por uso): más barato en tráfico intermitente, pero exige empaquetar la API como contenedor (Dockerfile, Azure Container Registry) — ceremonia de infraestructura que no se justifica para una sola API .NET de este tamaño. Señal para reconsiderar: tráfico realmente esporádico (picos raros, largos períodos sin uso) donde escalar a cero ahorre más de lo que cuesta la complejidad de contenedores.
 
-(Equivalente en el portal: App Service → Configuración → *General settings* → `SCM Basic Auth Publishing Credentials` → On.)
+**Azure SQL — por qué Serverless y no Provisioned.** El perfil de uso (equipo pequeño, no 24/7) encaja mejor con facturación por segundo de vCore que con vCores fijos reservados. Se mantiene auto-pause **deshabilitado** en producción (a diferencia de esta demo) para no exponer a los usuarios reales a la latencia de "despertar" la base (decenas de segundos) en la primera consulta tras inactividad; sí tiene sentido dejarlo activo en un ambiente de *staging* que se usa a diario pero no continuamente. Costo asumido: sin auto-pause, se paga por el mínimo de cómputo reservado aunque no haya tráfico en ese momento.
 
-**Cómo se detectó.** Un primer intento de ZipDeploy falló silenciosamente en la etapa "Extract zip" (causa real distinta, ver abajo); al intentar leer el log detallado de Kudu con las credenciales del publish profile (usuario/contraseña) se obtuvo `401 Unauthorized`. Un segundo intento con `az webapp deploy` devolvió `Kudu Status: 400` sin crear ningún registro de deployment (`az webapp log deployment list` vacío) — la petición nunca llegó a autenticarse. `az resource show` sobre `basicPublishingCredentialsPolicies/scm` confirmó `allow: false`.
+**Blob Storage — por qué WORM.** Aunque la carga de archivos queda fuera del alcance obligatorio de este reto, la arquitectura de producción debe anticiparla: el propósito del sistema es demostrar que una evidencia no fue alterada, y eso aplica igual de bien (o mejor) al archivo digital original que a sus metadatos. *Immutable blob storage* con políticas de retención por tiempo (*legal hold*) impide modificar o borrar un blob durante el período configurado, a nivel de la propia plataforma de almacenamiento — complementa, no reemplaza, el hash encadenado de `CustodyEvents`: el hash demuestra integridad del *registro*, WORM demuestra integridad del *archivo*.
 
-**Alternativa descartada.** Dejarlo deshabilitado y desplegar solo vía un pipeline de CI/CD autenticado con Azure AD (GitHub Actions + OIDC/Service Principal, que no depende de Basic Auth de Kudu). Es la opción correcta para producción, pero añade infraestructura de CI que no aporta al alcance de esta prueba técnica; se documenta como el camino a seguir si el proyecto continuara más allá de la entrega.
+**Key Vault y separación de ambientes.** `Jwt:Key`, la contraseña de SQL y cualquier clave futura (SAS de Blob Storage) viven en Key Vault, referenciadas desde la configuración del App Service (`@Microsoft.KeyVault(SecretUri=...)`) con *Managed Identity* — ni siquiera el operador que configura el App Service ve el secreto en texto plano en el portal. En esta demo, por simplicidad y para no sumar la fricción de configurar Managed Identity + Key Vault dentro del tiempo de la prueba técnica, los secretos van directo como variables de entorno del App Service (lo que ya cumple la regla no negociable de "nada de secretos en el repo", solo no llega al nivel de Key Vault). Ambientes: `dev` (local, Docker + `dotnet run`, ya implementado), `staging` (un *deployment slot* del mismo App Service Plan — más barato que un App Service separado — más una base de datos Azure SQL propia) y `production`. El *swap* de slot a producción es la forma de desplegar sin downtime y de poder revertir instantáneamente si algo falla.
 
-**Costo asumido.** Basic Auth de Kudu expone un usuario/contraseña con permisos de despliegue si se filtran (van en el publish profile, nunca en el repo). Aceptable para una demo de tiempo acotado con un solo desarrollador desplegando manualmente.
+**Application Insights y primer indicador/alerta.** El primero que se configuraría: una **prueba de disponibilidad** (*Availability Test*) de Azure Monitor contra `GET /health` cada 5 minutos desde 3+ regiones, con alerta si falla en 2+ regiones de forma consecutiva — es la señal más básica posible ("¿el servicio sigue vivo y conectado a la base?", que es literalmente lo que `/health` valida con `CanConnectAsync()`) y debe existir antes que cualquier alerta más específica del dominio. Como segunda alerta, ya con Application Insights instrumentado, tendría sentido una específica del dominio: tasa de `GET /chain/verify` con `isValid:false` por encima de un umbral — en un sistema sano esa tasa debería ser ~0; un salto indicaría o una manipulación real de datos, o (más probable en la práctica) un bug introducido en un despliegue reciente al formato canónico del hash.
 
-**Señal de cambio.** Antes de cualquier uso más allá de esta prueba técnica: desactivar de nuevo `SCM Basic Auth` y mover el despliegue a un pipeline con identidad federada (OIDC), que es el estándar recomendado por Azure y no reintroduce credenciales de larga duración.
+**Estimación mensual (USD, aproximada, equipo pequeño con tráfico bajo/intermitente).**
 
-### Causa raíz real del primer fallo de deploy (para no repetirla)
+| Componente | Estimado/mes |
+|---|---|
+| App Service B1 (Linux) | ~$13 |
+| Azure SQL Serverless (1 vCore, uso intermitente + almacenamiento) | ~$15–30 |
+| Blob Storage (Hot, pocos GB, uso bajo) | ~$1–5 |
+| Key Vault (Standard, pocas operaciones) | <$1 |
+| Application Insights (dentro del *free tier* de ingesta de 5 GB/mes) | $0–5 |
+| **Total** | **~$30–55/mes** |
 
-Un ZipDeploy anterior falló por dos motivos, ninguno relacionado con `web.config` (que en App Service **Linux** se ignora por completo — es config de IIS/Windows):
+Cifras de lista pública, sin descuentos de compromiso ni Reserved Instances; una estimación de orden de magnitud, no una cotización. Costo asumido de esta propuesta: es más caro que la demo actual ($0 en niveles *free*), pero la demo no tiene SLA ni es apta para tráfico real. Señal de cambio: si el equipo crece o el tráfico deja de ser intermitente, subir a App Service **S1** (Standard, con autoscale real) y a Azure SQL **Provisioned** (vCores fijos, más predecible bajo carga sostenida).
 
-1. El zip se generó comprimiendo la **carpeta** `publish/` en vez de su **contenido**: todas las entradas quedaban bajo `publish/EvidenceChain.Api.dll` en vez de `EvidenceChain.Api.dll` en la raíz, así que el runtime no encontraba el ensamblado de entrada tras extraer.
-2. El archivo `.deployment` incluido en el zip tenía contenido corrupto: el código PowerShell usado para generarlo (`@"..."@ | Out-File ...`) quedó escrito tal cual como contenido, en vez de solo el `[config]` / `command = ...` resultante. Kudu no podía parsearlo como INI válido.
-
-Corrección: eliminar `.deployment` (no hace falta ningún comando custom para un ZipDeploy de binario ya compilado) y regenerar el zip comprimiendo el contenido de `publish/` (no la carpeta).
-
-### Segunda causa: separadores de ruta de `Compress-Archive` y build en Kudu
-
-**El problema.** Con el zip ya corregido, el deploy seguía fallando en la etapa "Building the app…", con `rsync` rechazando cada archivo dentro de una subcarpeta:
-
-```
-rsync: failed to stat "/home/site/wwwroot/de\Microsoft.Data.SqlClient.resources.dll": Invalid argument (22)
-rsync: failed to stat "/home/site/wwwroot/runtimes\win-x64\native\Microsoft.Data.SqlClient.SNI.dll": Invalid argument (22)
-```
-
-`Compress-Archive` de PowerShell (Windows) escribió las rutas internas del zip con `\` en vez de `/`. El estándar ZIP exige `/`; en Linux, `\` es un carácter de archivo normal, no un separador — así que `de\Microsoft...dll` se interpreta como un nombre de archivo plano, no como `de/Microsoft...dll` dentro de una carpeta `de`, y la sincronización de Kudu no puede reconciliarlo. Solo los archivos en la raíz del zip (sin subcarpeta) se habían librado hasta ahora.
-
-**Opción elegida.** Generar el zip con `tar` (incluido en Windows 10/11, basado en `libarchive`, siempre usa `/`) en vez de `Compress-Archive`:
-
-```powershell
-cd backend\publish
-tar -a -c -f ..\publish.zip *
-```
-
-Además, se fijó `SCM_DO_BUILD_DURING_DEPLOYMENT=false` en el App Service:
-
-```bash
-az webapp config appsettings set --resource-group evidence-chain-rg --name evidencechain-api \
-  --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false
-```
-
-**Por qué esto además del zip.** Sin este ajuste, Kudu trata cualquier ZipDeploy como código **fuente** y lo pasa por su pipeline de build/sincronización (Oryx + `rsync`) — el mismo pipeline donde reventó el error de `\`. El binario ya se compiló en local con `dotnet publish`; pedirle a Azure que lo "compile" de nuevo es trabajo duplicado y, en este caso, la causa directa del fallo. Con la variable en `false`, Kudu solo extrae el zip a `wwwroot` y arranca — sin Oryx, sin `rsync`, sin el problema de separadores.
-
-**Cuándo sí conviene que Kudu compile (`SCM_DO_BUILD_DURING_DEPLOYMENT=true`, el default).** Solo cuando Azure es el *único* mecanismo de build — por ejemplo, integración Git directa de App Service (`git push` de código fuente sin pipeline externo) o una demo rápida sin CI. En cualquier proyecto con un pipeline de CI/CD real (GitHub Actions, Azure Pipelines), el build vive en el runner (`dotnet build`/`test`/`publish` como steps explícitos, con sus propios logs y artefactos versionados) y App Service solo recibe el artefacto ya compilado y probado — dejar `true` en ese caso duplicaría el build y rompería la garantía de "lo desplegado es justo lo que pasó CI".
-
-**Alternativa descartada.** Seguir con `Compress-Archive` normalizando manualmente los separadores de cada entrada del zip (posible vía `System.IO.Compression.ZipFile` a bajo nivel), o cambiar a 7-Zip. Más frágil y con más pasos que simplemente usar `tar`, que ya viene instalado y resuelve el problema en el origen.
-
-**Costo asumido.** `tar` en Windows es un wrapper de `bsdtar`/`libarchive`; funciona igual en cualquier Windows 10 (1803+)/11 sin instalar nada, pero es una dependencia menos "nativa" de PowerShell que `Compress-Archive` — cualquier script de empaquetado debe usar `tar`, no `Compress-Archive`, para este proyecto.
-
-**Señal de cambio.** En cuanto exista un pipeline de CI/CD (GitHub Actions), este empaquetado manual desaparece: el runner (Linux, normalmente) no tiene el problema de separadores de Windows, y el `dotnet publish` + `az webapp deploy`/`actions-deploy` del workflow reemplaza estos pasos manuales.
-
-**Verificado.** Tras aplicar ambos cambios, el deploy quedó en `status: 4` (Success) en `az webapp log deployment list`, el contenedor arrancó ("Now listening on: http://[::]:8080", "Application started") y `GET /health` respondió `200 {"status":"healthy"}` contra la URL pública, confirmando conexión real a Azure SQL.
-
-**Nota aparte, sin resolver.** `az webapp deploy --type zip` (el comando recomendado, no deprecado) devolvía `Kudu Status: 400` con cuerpo vacío en cada intento, incluso con Basic Auth ya habilitado y el zip corregido — mientras que el comando deprecado `az webapp deployment source config-zip` sí completó el deploy con éxito usando el mismo zip. No se investigó la causa exacta de ese 400 (posiblemente una particularidad del endpoint `/api/publish` de OneDeploy en este App Service); si se retoma el despliegue manual, usar `config-zip` pese al aviso de deprecación, o preferir un pipeline de CI/CD que no dependa de ninguno de los dos.
-
-### CORS entre el frontend en Vercel y el backend en Azure
-
-**El problema.** Tras desplegar el frontend en Vercel, la API en Azure devolvía CORS bloqueado. La causa **no** estaba en `Program.cs`, sino en cómo se configuró la variable de entorno: `Cors__AllowedOrigins` en Azure tenía el valor literal `["https://*.vercel.app"]` — un string con sintaxis de array JSON, no un array real. Las variables de entorno de .NET **no parsean JSON**; para vincular un array (`Cors:AllowedOrigins` es `string[]` en `appsettings.json`), hace falta el formato indexado: `Cors__AllowedOrigins__0`, `__1`, etc. Con un solo string plano, `GetSection("Cors:AllowedOrigins").Get<string[]>()` no encuentra hijos indexados y el array queda vacío.
-
-Además, el string usaba `*` como comodín de subdominio (`https://*.vercel.app`), algo que `policy.WithOrigins(...)` de ASP.NET Core **no soporta** — hace comparación exacta de string contra el header `Origin` del navegador, sin *glob* ni regex.
-
-**Opción elegida.** Corregir solo la variable de Azure al formato correcto, con el dominio **exacto** de producción de Vercel (que es estable entre despliegues, no cambia con cada `git push`):
-
-```bash
-az webapp config appsettings set --resource-group evidence-chain-rg --name evidencechain-api \
-  --settings "Cors__AllowedOrigins__0=https://evidence-chain-frontend.vercel.app"
-```
-
-No se tocó `Program.cs`: como el dominio de producción no cambia, `WithOrigins` con el valor exacto es suficiente y más simple que `SetIsOriginAllowed` con lógica de comodín (que sí habría hecho falta para aceptar además los *preview deployments* de Vercel, con subdominios aleatorios por PR — no necesario para esta entrega).
-
-**Alternativa descartada.** `SetIsOriginAllowed(origin => origin.EndsWith(".vercel.app"))` para aceptar cualquier subdominio de Vercel. Más flexible (cubriría previews), pero también más permisivo de lo necesario y sin beneficio real cuando solo existe un dominio de producción fijo que consumir.
-
-**Costo asumido.** Si en el futuro se prueban *preview deployments* de Vercel (subdominios distintos por rama/PR) contra esta misma API, habrá que añadir cada uno a mano (`Cors__AllowedOrigins__1`, `__2`…) o migrar a `SetIsOriginAllowed` con comprobación de sufijo.
-
-**Señal de cambio.** Si se automatiza el despliegue de previews de Vercel contra este backend, cambiar a `SetIsOriginAllowed` con una comprobación de sufijo (`.EndsWith(".vercel.app")`) en vez de seguir añadiendo orígenes exactos uno por uno.
-
-**Verificado.** Con `curl` simulando un preflight real (`OPTIONS /api/v1/evidence` con `Origin: https://evidence-chain-frontend.vercel.app` y `Access-Control-Request-Method/Headers`): `204` con `Access-Control-Allow-Origin` reflejando el origen exacto. La respuesta real (`GET` sin token) también lleva el header CORS — el `401 Unauthorized` que se veía era comportamiento esperado (sin `Authorization`, no relacionado con CORS), no un bug adicional.
-
-**Nota aparte.** La URL de Vercel usada durante el troubleshooting inicial (con un sufijo aleatorio por-deployment, `evidence-chain-frontend-<hash>-evidence-chain.vercel.app`) está protegida por "Vercel Authentication" (redirige a `vercel.com/sso-api`) y no debe compartirse con los evaluadores. El dominio de **producción** (`evidence-chain-frontend.vercel.app`, sin sufijo) queda exento de esa protección y es público — es el que hay que usar.
+Detalle completo del troubleshooting de despliegue (SCM Basic Auth, formato de zip, CORS Vercel↔Azure) en `context/progreso.md` y `context/ai-log.md` — no se repite aquí para respetar el límite de dos páginas de este documento.

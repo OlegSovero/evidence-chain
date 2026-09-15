@@ -72,8 +72,7 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
     });
 
 builder.Services.AddAuthorizationBuilder()
-    .AddPolicy(Policies.TransferRequester, policy => policy.RequireRole(Roles.Investigador, Roles.Supervisor))
-    .AddPolicy(Policies.Supervisor, policy => policy.RequireRole(Roles.Supervisor));
+    .AddPolicy(Policies.TransferRequester, policy => policy.RequireRole(Roles.Investigador, Roles.Supervisor));
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options =>

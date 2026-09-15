@@ -31,6 +31,7 @@ Materia prima de `docs/ai-usage.md`. El enunciado exige al menos una sugerencia 
 | 2026-09-12 | Claude Code | `dotnet-ef` como herramienta local (`dotnet-tools.json`) en vez de global | Versión fijada en el repo y reproducible con `dotnet tool restore` |
 | 2026-09-12 | Gemini | Inserción en bulto con `SqlBulkCopy` tipado en `DataTable`s en memoria y reasentamiento de secuencias con `DBCC CHECKIDENT` | Carga 1.000 evidencias y más de 10.000 eventos en menos de 2 segundos (frente a minutos con EF Core fila por fila), reasentando las secuencias de identidad para no colisionar con operaciones posteriores de la API |
 | 2026-09-12 | Gemini | Desactivación transitoria de `TR_CustodyEvents_AppendOnly` en transacción para alterar notas de evento 2 | Permite insertar la cadena íntegra primero y luego aplicar la modificación fraudulenta, demostrando que la verificación forense SHA-256 canónica detecta manipulaciones a nivel de base de datos |
+| 2026-09-15 | Gemini | Reestructurar el header agrupando marca y módulos (`.app__brand-nav`), delimitando el `max-width` del hint de demo a la derecha y añadiendo media query a 768px | El texto aclaratorio de 102 caracteres introducido en `c1f7b7c` demandaba ~650px de ancho en flexbox, haciendo que en pantallas de laptop y ventanas intermedias (<1120px) el selector saltara desalineado a una segunda fila. Con el ajuste se preserva en la misma fila desde 768px hacia arriba y quiebra limpiamente solo en pantallas móviles |
 
 ## Sugerencias rechazadas o corregidas
 

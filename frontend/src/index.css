@@ -77,15 +77,24 @@ button[type='submit'] {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 1.5rem;
-  padding: 1rem 1.5rem;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  padding: 0.85rem 1.5rem;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+}
+
+.app__brand-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .app__title {
   margin: 0;
   font-size: 1.25rem;
+  white-space: nowrap;
 }
 
 .app__nav {
@@ -115,19 +124,37 @@ button[type='submit'] {
 .user-switcher {
   margin-left: auto;
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.user-switcher__controls {
+  display: flex;
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .user-switcher__label {
   font-size: 0.85rem;
   color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.user-switcher__select {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
 }
 
 .user-switcher__role {
   font-size: 0.8rem;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .user-switcher__error {
@@ -136,10 +163,42 @@ button[type='submit'] {
 }
 
 .user-switcher__hint {
-  flex-basis: 100%;
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
+  text-align: right;
+  max-width: 380px;
+  line-height: 1.25;
+}
+
+@media (max-width: 768px) {
+  .app__header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .app__brand-nav {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .user-switcher {
+    margin-left: 0;
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .user-switcher__controls {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .user-switcher__hint {
+    text-align: left;
+    max-width: none;
+  }
 }
 
 .state {

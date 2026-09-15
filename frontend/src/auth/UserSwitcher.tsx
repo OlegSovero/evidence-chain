@@ -14,35 +14,37 @@ export function UserSwitcher() {
 
   return (
     <div className="user-switcher">
-      <label htmlFor="demo-user-select" className="user-switcher__label">
-        Usuario demo
-      </label>
-      <select
-        id="demo-user-select"
-        className="user-switcher__select"
-        value={user?.userName ?? ''}
-        disabled={isLoading || isSwitching}
-        onChange={(event) => {
-          if (event.target.value) {
-            void login(event.target.value);
-          }
-        }}
-      >
-        <option value="" disabled>
-          {isLoading ? 'Cargando usuarios…' : 'Elige un usuario'}
-        </option>
-        {data?.items.map((demoUser) => (
-          <option key={demoUser.userName} value={demoUser.userName}>
-            {demoUser.displayName} — {demoUser.role}
+      <div className="user-switcher__controls">
+        <label htmlFor="demo-user-select" className="user-switcher__label">
+          Usuario demo
+        </label>
+        <select
+          id="demo-user-select"
+          className="user-switcher__select"
+          value={user?.userName ?? ''}
+          disabled={isLoading || isSwitching}
+          onChange={(event) => {
+            if (event.target.value) {
+              void login(event.target.value);
+            }
+          }}
+        >
+          <option value="" disabled>
+            {isLoading ? 'Cargando usuarios…' : 'Elige un usuario'}
           </option>
-        ))}
-      </select>
-      {user && <span className="user-switcher__role">Rol activo: {user.role}</span>}
-      {error && (
-        <span role="alert" className="user-switcher__error">
-          {error}
-        </span>
-      )}
+          {data?.items.map((demoUser) => (
+            <option key={demoUser.userName} value={demoUser.userName}>
+              {demoUser.displayName} — {demoUser.role}
+            </option>
+          ))}
+        </select>
+        {user && <span className="user-switcher__role">Rol activo: {user.role}</span>}
+        {error && (
+          <span role="alert" className="user-switcher__error">
+            {error}
+          </span>
+        )}
+      </div>
       <p className="user-switcher__hint">
         Autenticación simplificada para la demo, conforme al enunciado. La autorización se valida en el
         servidor.

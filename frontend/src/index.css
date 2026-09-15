@@ -135,6 +135,13 @@ button[type='submit'] {
   font-size: 0.85rem;
 }
 
+.user-switcher__hint {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .state {
   padding: 1rem;
   border-radius: 8px;

@@ -43,6 +43,10 @@ export function UserSwitcher() {
           {error}
         </span>
       )}
+      <p className="user-switcher__hint">
+        Autenticación simplificada para la demo, conforme al enunciado. La autorización se valida en el
+        servidor.
+      </p>
     </div>
   );
 }

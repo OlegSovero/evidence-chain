@@ -50,9 +50,17 @@ function renderPage() {
 // actualización optimista debe revertirse y el error debe explicarse; nunca
 // debe quedar como confirmada una operación que el servidor rechazó.
 describe('PendingInboxPage', () => {
-  it('revierte la actualización optimista y explica el 409 al aceptar', async () => {
+  it('el aviso del 409 sobrevive a la reconciliación aunque el item ya no vuelva a la lista', async () => {
+    // Mock con estado: un 409 de este endpoint siempre significa que la
+    // transferencia ya salió de "Pendiente" (la resolvió otro custodio), así
+    // que el refetch en segundo plano que dispara onSettled ya no debe
+    // traerla. Un mock estático (como tenía este test antes) no reproduce
+    // este caso y no detecta que el aviso desaparecía junto con el item.
+    let stillPending = true;
     server.use(
-      http.get(`${API}/api/v1/custody-transfers`, () => HttpResponse.json({ items: [TRANSFER] })),
+      http.get(`${API}/api/v1/custody-transfers`, () =>
+        HttpResponse.json({ items: stillPending ? [TRANSFER] : [] }),
+      ),
     );
 
     let resolveAccept: (() => void) | undefined;
@@ -61,6 +69,7 @@ describe('PendingInboxPage', () => {
         await new Promise<void>((resolve) => {
           resolveAccept = resolve;
         });
+        stillPending = false;
         return HttpResponse.json(CONFLICT_BODY, { status: 409 });
       }),
     );
@@ -79,7 +88,14 @@ describe('PendingInboxPage', () => {
     // El servidor responde 409: la transferencia ya fue aceptada por otro custodio.
     resolveAccept?.();
 
-    await waitFor(() => expect(screen.getByText('EV-1')).toBeInTheDocument());
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('otro.custodio ya la marcó como Aceptada');
+
+    // La reconciliación de fondo confirma que ya no está pendiente: la bandeja
+    // queda vacía, pero el aviso del 409 debe seguir visible.
+    await waitFor(() =>
+      expect(screen.getByText('No tienes transferencias pendientes.')).toBeInTheDocument(),
+    );
     expect(screen.getByRole('alert')).toHaveTextContent('otro.custodio ya la marcó como Aceptada');
   }, 10000);
 });

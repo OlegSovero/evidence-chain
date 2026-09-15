@@ -48,4 +48,4 @@ Transversales:
 2. Marca el ítem en `context/progreso.md` y añade una línea a la bitácora.
 3. Actualiza la fila correspondiente de `docs/code-map.md` si la tarea toca una de las 7 capacidades.
 4. Anota en `context/ai-log.md` cualquier sugerencia de IA relevante que se haya aceptado o rechazado.
-5. Propón un commit pequeño con Conventional Commits.
+5. Propón un commit pequeño con Conventional Commits, sin trailer `Claude-Session: ...` ni ninguna otra referencia a la sesión de Claude en el mensaje (más allá de esto no cambies retroactivamente los commits ya pusheados que sí lo llevan, salvo que Oleg lo pida explícitamente).

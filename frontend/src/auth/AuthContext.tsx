@@ -31,8 +31,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         writeSession(next);
         setSession(next);
         // Todo lo cacheado (bandeja de transferencias "mine=true", detalle, etc.)
-        // depende de quién está autenticado: al cambiar de usuario se descarta.
-        queryClient.clear();
+        // depende de quién está autenticado. invalidateQueries (no clear: clear()
+        // vacía la caché pero no obliga a los componentes montados a refetchear)
+        // marca todo como obsoleto y dispara el refetch de lo que sigue en pantalla.
+        void queryClient.invalidateQueries();
       } catch {
         setError(`No se pudo iniciar sesión como "${userName}".`);
       } finally {
@@ -45,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     clearSession();
     setSession(null);
-    queryClient.clear();
+    void queryClient.invalidateQueries();
   }, [queryClient]);
 
   const value = useMemo<AuthContextValue>(
